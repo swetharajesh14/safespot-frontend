@@ -79,7 +79,7 @@ export default function Instructions() {
           }
         ]}>
           <Image 
-            source={require('../../assets/teacher.png')} 
+            source={require('../../assets/teacher.jpg')} 
             style={styles.teacherPhoto}
             resizeMode="contain"
           />
