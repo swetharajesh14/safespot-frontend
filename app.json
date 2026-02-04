@@ -19,7 +19,10 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "SafeSpot needs your location to keep your Kin updated.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeSpot protects you even when the app is closed.",
-        "UIBackgroundModes": ["location", "fetch"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch"
+        ]
       }
     },
     "android": {
@@ -40,7 +43,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
-    ]
+      "expo-router",
+      "expo-font"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "98bb30ee-82e9-41ad-960e-a5e286026057"
+      }
+    }
   }
 }
