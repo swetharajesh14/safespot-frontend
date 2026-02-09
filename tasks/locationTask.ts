@@ -6,19 +6,33 @@ const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
 
 const getDateKey = () => {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
+  const y = parts.find(p => p.type === "year")!.value;
+  const m = parts.find(p => p.type === "month")!.value;
+  const d = parts.find(p => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+};
+const fmtTime = (d: string | number | Date) =>
+  new Date(d).toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+// ✅ Define task ONCE
 TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
   try {
     if (error) {
       console.log("BG Task error:", error);
       return;
     }
+
     const locations = (data as any)?.locations as Location.LocationObject[] | undefined;
     if (!locations || locations.length === 0) return;
 
@@ -54,17 +68,15 @@ export const startJourneyTracking = async () => {
   if (started) return;
 
   await Location.startLocationUpdatesAsync(TASK_NAME, {
-    accuracy: Location.Accuracy.Balanced,
-    timeInterval: 60_000,
-    distanceInterval: 30,
-    pausesUpdatesAutomatically: true,
+    accuracy: Location.Accuracy.High,
+    timeInterval: 10000,
+    distanceInterval: 10,
     foregroundService: {
-      notificationTitle: "SafeSpot is tracking",
-      notificationBody: "Journey tracking is active",
+      notificationTitle: "SafeSpot Tracking",
+      notificationBody: "Tracking your journey",
     },
   });
 };
-
 export const stopJourneyTracking = async () => {
   const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
   if (!started) return;
@@ -73,52 +85,4 @@ export const stopJourneyTracking = async () => {
 
 export const isJourneyTrackingOn = async () => {
   return await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
-};
-let fgSubscription: Location.LocationSubscription | null = null;
-
-export const startForegroundTracking = async () => {
-  const fg = await Location.requestForegroundPermissionsAsync();
-  if (fg.status !== "granted") throw new Error("Foreground permission not granted");
-
-  if (fgSubscription) return; // already running
-
-  fgSubscription = await Location.watchPositionAsync(
-    {
-      accuracy: Location.Accuracy.Balanced,
-      timeInterval: 10_000,    // every 10 sec
-      distanceInterval: 10,    // or every 10 meters
-    },
-    async (loc) => {
-      try {
-        const { latitude, longitude, speed, accuracy } = loc.coords;
-
-        await fetch(`${API_URL}/api/journey/point`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: USER_ID,
-            dateKey: getDateKey(),
-            ts: new Date(loc.timestamp).toISOString(),
-            lat: latitude,
-            lng: longitude,
-            speed: speed ?? 0,
-            accuracy: accuracy ?? 0,
-          }),
-        });
-      } catch (e) {
-        console.log("FG send error:", e);
-      }
-    }
-  );
-};
-
-export const stopForegroundTracking = async () => {
-  if (fgSubscription) {
-    fgSubscription.remove();
-    fgSubscription = null;
-  }
-};
-
-export const isForegroundTrackingOn = () => {
-  return !!fgSubscription;
 };
