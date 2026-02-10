@@ -26,7 +26,12 @@ type JourneySummary = {
   sessions: string; // "2"
   zones: string; // "Mostly Safe"
 };
-
+type JourneyStatus = {
+  status: "MOVING" | "IDLE" | "STOPPED";
+  lastTs: string | null;
+  lastLat?: number;
+  lastLng?: number;
+};
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
 
@@ -42,6 +47,8 @@ export default function JourneyScreen() {
   });
 
   const [events, setEvents] = useState<JourneyEvent[]>([]);
+  const [status, setStatus] = useState<JourneyStatus>({ status: "STOPPED", lastTs: null });
+
 
   const todayDateKey = useMemo(() => {
     // local date YYYY-MM-DD
@@ -52,11 +59,24 @@ export default function JourneyScreen() {
     return `${yyyy}-${mm}-${dd}`;
   }, []);
 
+  const fetchTodayStatus = async () => {
+  try {
+    const res = await fetch(`${API_URL}/api/journey/${USER_ID}/today/status`);
+    const data = await res.json();
+
+    if (res.ok) {
+      setStatus(data);
+    }
+  } catch (e) {
+    console.log("Status fetch error:", e);
+  }
+};
+
   const fetchTodayJourney = async () => {
     try {
       const res = await fetch(`${API_URL}/api/journey/${USER_ID}/today`);
       const data = await res.json();
-
+      
       if (!res.ok) {
         Alert.alert("Error", data?.message || "Failed to load journey");
         return;
@@ -70,7 +90,7 @@ export default function JourneyScreen() {
         sessions: data?.summary?.sessions ?? "0",
         zones: data?.summary?.zones ?? "No data yet",
       });
-
+      
       // Normalize events
       const apiEvents: JourneyEvent[] = Array.isArray(data?.events)
         ? data.events.map((e: any) => ({
@@ -82,20 +102,19 @@ export default function JourneyScreen() {
         : [];
 
       setEvents(apiEvents);
+      await fetchTodayStatus();
     } catch (err) {
       console.log("Journey fetch error:", err);
       Alert.alert("Network error", "Could not load journey. Check internet/backend.");
     }
   };
-
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await fetchTodayJourney();
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  (async () => {
+    setLoading(true);
+    await fetchTodayJourney();
+    setLoading(false);
+  })();
+}, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -141,7 +160,17 @@ export default function JourneyScreen() {
                 <Text style={styles.cardTitle}>Today · Summary</Text>
                 <Text style={styles.cardSub}>Fetched from your backend</Text>
               </View>
-
+              <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons
+                  name={status.status === "MOVING" ? "walk" : status.status === "IDLE" ? "pause" : "stop-circle"}
+                  size={16}
+                  color="#7A294E"
+                />
+                <Text style={{ fontSize: 12, fontWeight: "800", color: "#7A294E" }}>
+                  {status.status}
+                  {status.lastTs ? ` · Last: ${new Date(status.lastTs).toLocaleTimeString("en-IN")}` : ""}
+                </Text>
+              </View>
               <View style={styles.badge}>
                 <Ionicons name="sparkles-outline" size={16} color="#7A294E" />
                 <Text style={styles.badgeText}>{summary.zones}</Text>

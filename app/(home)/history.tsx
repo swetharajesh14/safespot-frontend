@@ -1,284 +1,384 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { Accelerometer, Gyroscope } from 'expo-sensors';
-import * as TaskManager from 'expo-task-manager';
+import React, { useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  ActivityIndicator,
+  TouchableOpacity,
+  Alert,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 
-const LOCATION_TASK_NAME = 'background-location-task';
-const { width } = Dimensions.get('window');
-const BACKEND_URL = 'https://safespot-backend-vx2w.onrender.com/api';
-const USER_ID = 'Swetha_01';
+type HistoryLog = {
+  _id: string;
+  userId: string;
+  latitude?: number;
+  longitude?: number;
+  speed?: number;
+  accelX?: number;
+  accelY?: number;
+  accelZ?: number;
+  gyroX?: number;
+  gyroY?: number;
+  gyroZ?: number;
+  intensity?: string;
+  isAbnormal?: boolean;
+  timestamp?: string;
+};
 
-// BACKGROUND TASK DEFINITION
-TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
-  if (error) return;
-  if (data) {
-    console.log("🛰️ Background Sync Attempted");
+const BACKEND_URL = "https://safespot-backend-vx2w.onrender.com";
+const USER_ID = "Swetha_01";
+
+const fmt = (iso?: string) => {
+  if (!iso) return "--";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "short",
+    });
+  } catch {
+    return iso;
   }
-});
+};
 
-export default function HistoryDashboard() {
+export default function HistoryScreen() {
   const router = useRouter();
 
-  // 1. ALL HOOKS
-  const [timeRange, setTimeRange] = useState('Day');
-  const [data, setData] = useState<any>(null);
+  const [logs, setLogs] = useState<HistoryLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string>("--");
 
-  // 2. DATA FETCHING LOGIC
-  const fetchAnalytics = async () => {
-    setIsSyncing(true);
+  const intervalRef = useRef<number | null>(null);
+
+useEffect(() => {
+  (async () => {
+    setLoading(true);
+    await fetchLogs();
+    setLoading(false);
+  })();
+
+  intervalRef.current = setInterval(fetchLogs, 5000);
+
+  return () => {
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+    }
+  };
+}, []);
+
+  const fetchLogs = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/analytics/${USER_ID}`);
-      const result = await response.json();
-      if (result) {
-        setData(result);
+      const res = await fetch(
+        `${BACKEND_URL}/api/history/${USER_ID}/latest?limit=50`
+      );
+      const data = await res.json();
+
+      console.log("Fetched logs count:", data?.logs?.length);
+      console.log("Latest log:", data?.logs?.[0]);
+
+      if (!res.ok) {
+        Alert.alert("Error", data?.message || "Failed to load history logs");
+        return;
       }
-    } catch (e) {
-      console.log("Sync error");
-    } finally {
-      setLoading(false);
-      setTimeout(() => setIsSyncing(false), 1000);
+
+      setLogs(Array.isArray(data?.logs) ? data.logs : []);
+      setLastUpdated(new Date().toLocaleTimeString("en-IN"));
+    } catch (e: any) {
+      console.log("history fetch error", e);
+      Alert.alert("Network error", e?.message || "Backend not reachable");
     }
   };
 
-  // 3. LIFECYCLE EFFECT
-  useEffect(() => {
-    fetchAnalytics();
+  const postTestLog = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: USER_ID,
+          speed: 0.5,
+          accelX: 5,
+          accelY: 3,
+          accelZ: 2,
+          gyroX: 0,
+          gyroY: 0,
+          gyroZ: 0,
+          latitude: 9.94,
+          longitude: 78.12,
+        }),
+      });
 
-    const subscription = Accelerometer.addListener(async (accelData) => {
-      const magnitude = Math.sqrt(accelData.x ** 2 + accelData.y ** 2 + accelData.z ** 2);
-      if (magnitude > 1.8) {
-        const gyro = await new Promise<{ x: number, y: number, z: number }>(res => {
-          const sub = Gyroscope.addListener(g => {
-            sub.remove();
-            res(g);
-          });
-        });
-
-        try {
-          await fetch(`${BACKEND_URL}/history`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: USER_ID,
-              accelX: accelData.x,
-              gyroX: gyro.x,
-              speed: 0.5,
-            }),
-          });
-          console.log("💥 Live Data Synced");
-        } catch (e) {
-          console.log("Live Sync Failed");
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        return Alert.alert("POST failed", data?.error || "error");
       }
-    });
 
-    Accelerometer.setUpdateInterval(1000);
-    const interval = setInterval(fetchAnalytics, 10000);
+      Alert.alert(
+        "Posted ✅",
+        `Intensity: ${data.intensity}, Abnormal: ${data.isAbnormal}`
+      );
+
+      await fetchLogs();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed");
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      await fetchLogs();
+      setLoading(false);
+    })();
+
+    // Auto refresh every 5 seconds
+    intervalRef.current = setInterval(fetchLogs, 5000);
 
     return () => {
-      subscription.remove();
-      clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#7A294E" />
-        <Text style={{ marginTop: 10, color: '#A07A88' }}>Connecting to SafeSpot...</Text>
-      </View>
-    );
-  }
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchLogs();
+    setRefreshing(false);
+  };
 
   return (
-    <View style={styles.container}>
-      {/* HEADER SECTION */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#7A294E" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Movement Analytics</Text>
-        <View style={{ width: 24 }} />
-      </View>
+    <View style={{ flex: 1 }}>
+      <LinearGradient
+        colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]}
+        style={styles.bg}
+      >
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+            <Ionicons name="arrow-back" size={22} color="#7A294E" />
+          </TouchableOpacity>
 
-      {/* CLOUD SYNC INDICATOR */}
-      <View style={styles.syncIndicator}>
-        <View style={[styles.syncDot, { backgroundColor: isSyncing ? '#7A294E' : '#E5C1CD' }]} />
-        <Text style={styles.syncText}>
-          {isSyncing ? 'Syncing with MongoDB...' : 'Cloud Connection Active'}
-        </Text>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollPadding}>
-        
-        {/* TIME RANGE TABS */}
-        <View style={styles.tabContainer}>
-          {['Day', 'Week', 'Month'].map((tab) => (
-            <TouchableOpacity 
-              key={tab} 
-              style={[styles.tab, timeRange === tab && styles.activeTab]}
-              onPress={() => setTimeRange(tab)}
-            >
-              <Text style={[styles.tabText, timeRange === tab && styles.activeTabText]}>{tab}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* 2x2 METRICS GRID */}
-        <View style={styles.grid}>
-          <MetricCard icon="time-outline" label="Active Time" value={data?.activeTime || '0 mins'} color="#7A294E" />
-          <MetricCard icon="pulse-outline" label="Stability" value={`${data?.stabilityScore || 0}%`} color="#7A294E" />
-          <MetricCard icon="speedometer-outline" label="Avg Speed" value={`${data?.avgSpeed || 1.2} m/s`} color="#7A294E" />
-          <MetricCard icon="flash-outline" label="Intensity" value={data?.intensityStatus || 'Moderate'} color="#A07A88" />
-        </View>
-
-        {/* 24-HOUR ACTIVITY HEATMAP */}
-        <View style={styles.heatmapCard}>
-          <Text style={styles.sectionTitle}>24-Hour Activity Heatmap</Text>
-          <View style={styles.heatRow}>
-            {(data?.heatmap || Array(24).fill(0)).map((intensity: number, i: number) => (
-              <View 
-                key={i} 
-                style={[
-                  styles.heatBar, 
-                  { 
-                    height: Math.max(5, Math.min(intensity * 3, 60)), 
-                    backgroundColor: intensity > 10 ? '#7A294E' : '#F6E6EE',
-                    opacity: intensity > 0 ? 1 : 0.4 
-                  }
-                ]} 
-              />
-            ))}
-          </View>
-          <View style={styles.timeLabelRow}>
-            <Text style={styles.timeLabel}>12AM</Text>
-            <Text style={styles.timeLabel}>6AM</Text>
-            <Text style={styles.timeLabel}>12PM</Text>
-            <Text style={styles.timeLabel}>6PM</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Movement Logs</Text>
+            <Text style={styles.sub}>
+              Live backend · {USER_ID} · Updated: {lastUpdated}
+            </Text>
           </View>
         </View>
 
-        {/* ABNORMAL MOVEMENT TIMELINE */}
-        <View style={styles.timelineHeaderRow}>
-            <Text style={styles.sectionTitle}>Abnormal Movement Timeline</Text>
+        {/* Buttons */}
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={fetchLogs}>
+            <Ionicons
+              name="refresh"
+              size={16}
+              color="#7A294E"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.refreshBtn} onPress={postTestLog}>
+            <Ionicons
+              name="add-circle-outline"
+              size={16}
+              color="#7A294E"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.refreshText}>Test Log</Text>
+          </TouchableOpacity>
         </View>
-        
-        <View style={styles.timelineContainer}>
-          {data?.timeline?.length > 0 ? (
-            data.timeline.map((item: any, index: number) => (
-              <TimelineItem key={index} time={item.time} title={item.title} type={item.type} />
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="shield-checkmark-outline" size={32} color="#E5C1CD" />
-              <Text style={styles.noDataText}>No abnormal movements detected today.</Text>
+
+        <Text style={styles.countText}>Total shown: {logs.length}</Text>
+
+        <ScrollView
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          {loading ? (
+            <View style={{ paddingTop: 20 }}>
+              <ActivityIndicator />
+              <Text style={styles.loadingText}>Loading logs...</Text>
             </View>
+          ) : logs.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="alert-circle-outline" size={22} color="#A07A88" />
+              <Text style={styles.emptyText}>No logs found.</Text>
+              <Text style={styles.emptySub}>
+                Start tracking and ensure the app is POSTing to /api/history.
+              </Text>
+            </View>
+          ) : (
+            logs.map((l) => (
+              <View key={l._id} style={styles.card}>
+                <View style={styles.cardRow}>
+                  <Text style={styles.time}>{fmt(l.timestamp)}</Text>
+
+                  {l.isAbnormal ? (
+                    <View style={styles.badgeDanger}>
+                      <Ionicons
+                        name="warning"
+                        size={14}
+                        color="#C43B5A"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={styles.badgeDangerText}>ABNORMAL</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.badgeOk}>
+                      <Text style={styles.badgeOkText}>NORMAL</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.intensity}>
+                  Intensity:{" "}
+                  <Text style={{ fontWeight: "900" }}>
+                    {l.intensity || "Idle"}
+                  </Text>
+                </Text>
+
+                <Text style={styles.meta}>
+                  Speed: {(l.speed ?? 0).toFixed(2)} m/s
+                </Text>
+
+                <Text style={styles.meta}>
+                  Accel: {(l.accelX ?? 0).toFixed(2)}, {(l.accelY ?? 0).toFixed(
+                    2
+                  )}
+                  , {(l.accelZ ?? 0).toFixed(2)}
+                </Text>
+
+                <Text style={styles.meta}>
+                  Gyro: {(l.gyroX ?? 0).toFixed(2)}, {(l.gyroY ?? 0).toFixed(2)}
+                  , {(l.gyroZ ?? 0).toFixed(2)}
+                </Text>
+
+                {l.latitude != null && l.longitude != null && (
+                  <Text style={styles.meta}>
+                    Location: {l.latitude.toFixed(5)}, {l.longitude.toFixed(5)}
+                  </Text>
+                )}
+              </View>
+            ))
           )}
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-// Sub-component for Metric Cards
-function MetricCard({ icon, label, value, color }: any) {
-  return (
-    <View style={styles.card}>
-      <View style={[styles.iconCircle, { backgroundColor: '#FDF2F7' }]}>
-        <Ionicons name={icon} size={18} color={color} />
-      </View>
-      <Text style={styles.cardValue}>{value}</Text>
-      <Text style={styles.cardLabel}>{label}</Text>
-    </View>
-  );
-}
-
-// Sub-component for Timeline Item
-function TimelineItem({ time, title, type }: { time: string, title: string, type: string }) {
-  const isHigh = type === 'High';
-  return (
-    <View style={styles.tlItem}>
-      <View style={[styles.tlIconCircle, { backgroundColor: isHigh ? '#FDF2F7' : '#F6E6EE' }]}>
-        <Ionicons 
-          name={isHigh ? "alert-outline" : "walk-outline"} 
-          size={18} 
-          color={isHigh ? "#7A294E" : "#A07A88"} 
-        />
-      </View>
-      <View style={styles.tlContent}>
-        <Text style={styles.tlTitle}>{title}</Text>
-        <Text style={styles.tlTime}>{time}</Text>
-      </View>
-      <View style={[styles.badge, { backgroundColor: isHigh ? '#7A294E' : '#FDF2F7' }]}>
-        <Text style={[styles.badgeText, { color: isHigh ? '#FFF' : '#7A294E' }]}>{type}</Text>
-      </View>
+        </ScrollView>
+      </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBF0' },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingTop: 60, 
-    paddingHorizontal: 20, 
-    paddingBottom: 15, 
-    backgroundColor: '#FFF' 
+  bg: { flex: 1, paddingTop: 50, paddingHorizontal: 16 },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#7A294E' },
-  syncIndicator: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
-  syncDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  syncText: { fontSize: 12, color: '#A07A88', fontWeight: '500' },
-  scrollPadding: { paddingHorizontal: 20, paddingBottom: 40 },
-  tabContainer: { flexDirection: 'row', backgroundColor: '#F6E6EE', borderRadius: 12, padding: 4, marginBottom: 25 },
-  tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
-  activeTab: { backgroundColor: '#FFF', elevation: 2, shadowColor: '#7A294E', shadowOpacity: 0.1, shadowRadius: 5 },
-  tabText: { color: '#A07A88', fontSize: 13, fontWeight: '500' },
-  activeTabText: { color: '#7A294E', fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  card: { 
-    width: '48%', 
-    backgroundColor: '#FFF', 
-    padding: 20, 
-    borderRadius: 20, 
-    marginBottom: 15, 
-    elevation: 3, 
-    shadowColor: '#000', 
-    shadowOpacity: 0.05, 
-    shadowRadius: 10 
+
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
-  iconCircle: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  cardLabel: { fontSize: 12, color: '#A07A88', fontWeight: '500' },
-  cardValue: { fontSize: 18, fontWeight: '700', color: '#7A294E' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#7A294E', marginTop: 10, marginBottom: 15 },
-  heatmapCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 24, marginBottom: 25, elevation: 3 },
-  heatRow: { flexDirection: 'row', alignItems: 'flex-end', height: 60, justifyContent: 'space-between' },
-  heatBar: { width: 7, borderRadius: 4 },
-  timeLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  timeLabel: { fontSize: 10, color: '#A07A88', fontWeight: '600' },
-  timelineHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  timelineContainer: { marginTop: 5 },
-  tlItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#FFF', 
-    padding: 15, 
-    borderRadius: 18, 
-    marginBottom: 12, 
-    elevation: 2 
+
+  title: { fontSize: 26, fontWeight: "900", color: "#7A294E" },
+  sub: { marginTop: 3, fontSize: 12, fontWeight: "700", color: "#A07A88" },
+
+  btnRow: { flexDirection: "row", marginTop: 10 },
+  refreshBtn: {
+    marginRight: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#7A294E",
+    backgroundColor: "#FDF2F7",
   },
-  tlIconCircle: { width: 38, height: 38, borderRadius: 19, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  tlContent: { flex: 1 },
-  tlTitle: { fontSize: 14, fontWeight: '600', color: '#7A294E' },
-  tlTime: { fontSize: 12, color: '#A07A88', marginTop: 2 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  emptyState: { alignItems: 'center', paddingVertical: 30 },
-  noDataText: { color: '#A07A88', fontSize: 13, marginTop: 10 }
+  refreshText: { fontSize: 12, fontWeight: "900", color: "#7A294E" },
+
+  countText: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#7A294E",
+    opacity: 0.85,
+  },
+
+  loadingText: {
+    textAlign: "center",
+    marginTop: 10,
+    fontWeight: "700",
+    color: "#A07A88",
+  },
+
+  emptyBox: {
+    marginTop: 18,
+    backgroundColor: "white",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#F3E5EC",
+    alignItems: "center",
+  },
+  emptyText: { marginTop: 8, fontSize: 13, fontWeight: "900", color: "#7A294E" },
+  emptySub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#A07A88",
+    textAlign: "center",
+  },
+
+  card: {
+    backgroundColor: "white",
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#F3E5EC",
+  },
+  cardRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  time: { fontSize: 12, fontWeight: "800", color: "#A07A88" },
+
+  badgeOk: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#F6E6EE",
+  },
+  badgeOkText: { fontSize: 11, fontWeight: "900", color: "#7A294E" },
+
+  badgeDanger: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFE9EE",
+  },
+  badgeDangerText: { fontSize: 11, fontWeight: "900", color: "#C43B5A" },
+
+  intensity: { marginTop: 8, fontSize: 13, fontWeight: "800", color: "#7A294E" },
+  meta: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88" },
 });

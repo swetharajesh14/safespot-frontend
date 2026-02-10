@@ -1,3 +1,4 @@
+// app/(dock)/_layout.tsx
 import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,17 +12,11 @@ export default function DockLayout() {
         tabBarActiveTintColor: "#7A294E",
         tabBarInactiveTintColor: "#A07A88",
         tabBarStyle: {
+          backgroundColor: "#FFFBF0",
+          borderTopColor: "#F3E5EC",
           height: 64,
+          paddingBottom: 8,
           paddingTop: 8,
-          paddingBottom: 10,
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          position: "absolute",
-          left: 10,
-          right: 10,
-          bottom: 10,
-          backgroundColor: "white",
-          elevation: 12,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -34,7 +29,7 @@ export default function DockLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+            <Ionicons name="home-outline" color={color} size={size ?? 22} />
           ),
         }}
       />
@@ -44,7 +39,7 @@ export default function DockLayout() {
         options={{
           title: "Journey",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map-outline" size={size} color={color} />
+            <Ionicons name="map-outline" color={color} size={size ?? 22} />
           ),
         }}
       />
@@ -54,7 +49,28 @@ export default function DockLayout() {
         options={{
           title: "Profile",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+            <Ionicons name="person-outline" color={color} size={size ?? 22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings-outline" color={color} size={size ?? 22} />
+          ),
+        }}
+      />
+
+      {/* ✅ Movement = person running/walking icon */}
+      <Tabs.Screen
+        name="movement-analysis"
+        options={{
+          title: "Move", // ✅ short title so it won't cut like "movemen..."
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="walk-outline" color={color} size={size ?? 22} />
           ),
         }}
       />

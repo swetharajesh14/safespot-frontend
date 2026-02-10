@@ -8,37 +8,32 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { startMotionTracking, stopMotionTracking } from "../../tasks/motionTracker";
 
-import {
-  startForegroundTracking,
-  stopForegroundTracking,
-  isForegroundTrackingOn,
-} from "../../tasks/locationTask";
+
 
 
 export default function Settings() {
   const [on, setOn] = useState(false);
 
-const refresh = async () => {
-  setOn(isForegroundTrackingOn());
-};
+
+
 
 const start = async () => {
   try {
-    await startForegroundTracking();
-    refresh();
-    Alert.alert("Started ✅", "Tracking works while app is open (Expo Go)");
+    await startMotionTracking();
+    setOn(true);
+    Alert.alert("Started ✅", "Movement tracking started");
   } catch (e: any) {
     Alert.alert("Error", e.message || "Could not start tracking");
   }
 };
 
 const stop = async () => {
-  await stopForegroundTracking();
-  refresh();
+  await stopMotionTracking();
+  setOn(false);
   Alert.alert("Stopped", "Tracking OFF");
 };
-
 
   return (
     <LinearGradient colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]} style={styles.bg}>

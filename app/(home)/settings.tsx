@@ -21,7 +21,7 @@ export default function RealDataAnalysis() {
   const [maxForce, setMaxForce] = useState(0);
   const saveActivityToBackend = async (action: string, force: number) => {
   try {
-    await fetch('http://YOUR_COMPUTER_IP:3000/api/activity', {
+    await fetch('http://192.168.1.16:3000/api/activity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

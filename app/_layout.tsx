@@ -23,7 +23,10 @@ export default function RootLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      {/* your entry route */}
       <Stack.Screen name="index" />
+
+      {/* route groups */}
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(dock)" />
       <Stack.Screen name="(home)" />

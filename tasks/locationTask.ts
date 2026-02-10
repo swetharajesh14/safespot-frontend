@@ -1,6 +1,10 @@
 import * as TaskManager from "expo-task-manager";
 import * as Location from "expo-location";
 
+console.log("hasStarted:", typeof (Location as any).hasStartedLocationUpdatesAsync);
+console.log("startUpdates:", typeof (Location as any).startLocationUpdatesAsync);
+console.log("TaskManager:", typeof (TaskManager as any).defineTask);
+
 export const TASK_NAME = "SAFE_SPOT_BG_LOCATION_TASK";
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
