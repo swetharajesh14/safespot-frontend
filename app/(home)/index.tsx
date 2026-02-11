@@ -15,17 +15,22 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Contacts from "expo-contacts";
+import { startMotionTracking } from "../../tasks/motionTracker";
+
+useEffect(() => {
+  startMotionTracking();
+}, []);
 
 const { width } = Dimensions.get("window");
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
 
-interface Protector {
-  id: string;
+type Protector = {
+  _id: string;
   name: string;
   photo: string;
-}
-
+  phone: string;
+};
 export default function SafeSpotIndex() {
   const nav = useRouter();
   const [protectors, setProtectors] = useState<Protector[]>([]);
@@ -36,13 +41,14 @@ export default function SafeSpotIndex() {
       if (!res.ok) return;
       const data = await res.json();
 
-      const formatted = (Array.isArray(data) ? data : []).map((p: any) => ({
-        id: p._id ? String(p._id) : Math.random().toString(),
-        name: p.name ?? "Protector",
-        photo: p.photo || "https://via.placeholder.com/150",
-      }));
+    const formattedData = data.map((p: any) => ({
+  _id: String(p._id),
+  name: p.name,
+  photo: p.photo || "https://via.placeholder.com/150",
+  phone: p.phone,
+}));
 
-      setProtectors(formatted);
+      setProtectors(formattedData);
     } catch (e) {
       console.log("Fetch protectors failed:", e);
     }
@@ -143,16 +149,16 @@ export default function SafeSpotIndex() {
               </TouchableOpacity>
 
               {protectors.length > 0 ? (
-                protectors.map((p) => (
-                  <TouchableOpacity key={p.id} style={{ marginLeft: -12 }}>
-                    <Image source={{ uri: p.photo }} style={styles.circlePhoto} />
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <View style={styles.emptyState}>
-                  <Ionicons name="shield-checkmark-outline" size={24} color="#A07A88" />
-                </View>
-              )}
+                  protectors.map((p) => (
+                    <TouchableOpacity key={p._id} style={{ marginLeft: -12 }}>
+                      <Image source={{ uri: p.photo }} style={styles.circlePhoto} />
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="shield-checkmark-outline" size={24} color="#A07A88" />
+                  </View>
+                )}
             </View>
           </View>
 

@@ -1,12 +1,9 @@
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import * as Location from "expo-location";
-import { sendWhatsApp, makeCall } from "../utils/sos";
+import { sendSOS } from "../utils/sendSOS";
 
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
-
-// put your emergency number (with country code)
-const EMERGENCY_PHONE = "91XXXXXXXXXX";
 
 let accelSub: any = null;
 let gyroSub: any = null;
@@ -16,7 +13,6 @@ let timer: any = null;
 let sosCooldown = false;
 
 export const startMotionTracking = async () => {
-  // permissions
   await Location.requestForegroundPermissionsAsync();
 
   Accelerometer.setUpdateInterval(500);
@@ -27,11 +23,17 @@ export const startMotionTracking = async () => {
 
   timer = setInterval(async () => {
     try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const latitude = loc.coords.latitude;
+      const longitude = loc.coords.longitude;
+
       const payload = {
         userId: USER_ID,
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
+        latitude,
+        longitude,
         speed: loc.coords.speed ?? 0,
         accelX: lastAccel.x,
         accelY: lastAccel.y,
@@ -49,34 +51,26 @@ export const startMotionTracking = async () => {
 
       const data = await res.json();
 
-      if (data?.isAbnormal === true && !sosCooldown) {
-        sosCooldown = true;
+     if (data?.isAbnormal === true && !sosCooldown) {
+      sosCooldown = true;
 
-        const msg =
-          `SOS! Abnormal movement detected.\n` +
-          `Intensity: ${data.intensity}\n` +
-          `Location: https://maps.google.com/?q=${payload.latitude},${payload.longitude}`;
+      await sendSOS(payload.latitude, payload.longitude);
 
-        // WhatsApp + call
-        await sendWhatsApp(EMERGENCY_PHONE, msg);
-        await makeCall(EMERGENCY_PHONE);
-
-        // cooldown 2 minutes to avoid spam
-        setTimeout(() => (sosCooldown = false), 2 * 60 * 1000);
-      }
+      setTimeout(() => (sosCooldown = false), 3 * 60 * 1000); // 3 min cooldown
+    }
     } catch (e) {
-      // keep silent to avoid crash loop
       console.log("motion tick error", e);
     }
-  }, 2000); // every 2 sec
+  }, 2000);
 };
 
-export const stopMotionTracking = async () => {
+export const stopMotionTracking = () => {
   if (timer) clearInterval(timer);
   timer = null;
 
   if (accelSub) accelSub.remove();
   if (gyroSub) gyroSub.remove();
+
   accelSub = null;
   gyroSub = null;
 };

@@ -19,7 +19,7 @@ const { width } = Dimensions.get("window");
 const CIRCLE_SIZE = width * 0.75;
 
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
-const PROTECTORS_BASE = "https://safespot-backend-vx2w.onrender.com/api/protectors";
+const PROTECTORS_BASE = "https://safespot-backend-vx2w.onrender.com/api/protectors"; 
 const USER_ID = "Swetha_01";
 
 type Guardian = {
