@@ -55,23 +55,8 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("--");
 
-  const intervalRef = useRef<number | null>(null);
-
-useEffect(() => {
-  (async () => {
-    setLoading(true);
-    await fetchLogs();
-    setLoading(false);
-  })();
-
-  intervalRef.current = setInterval(fetchLogs, 5000);
-
-  return () => {
-    if (intervalRef.current !== null) {
-      clearInterval(intervalRef.current);
-    }
-  };
-}, []);
+  // ✅ Works on both RN (number) and Node typings (Timeout)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchLogs = async () => {
     try {
@@ -79,9 +64,6 @@ useEffect(() => {
         `${BACKEND_URL}/api/history/${USER_ID}/latest?limit=50`
       );
       const data = await res.json();
-
-      console.log("Fetched logs count:", data?.logs?.length);
-      console.log("Latest log:", data?.logs?.[0]);
 
       if (!res.ok) {
         Alert.alert("Error", data?.message || "Failed to load history logs");
@@ -116,13 +98,15 @@ useEffect(() => {
       });
 
       const data = await res.json();
+
       if (!res.ok) {
-        return Alert.alert("POST failed", data?.error || "error");
+        Alert.alert("POST failed", data?.error || data?.message || "error");
+        return;
       }
 
       Alert.alert(
         "Posted ✅",
-        `Intensity: ${data.intensity}, Abnormal: ${data.isAbnormal}`
+        `Intensity: ${data?.intensity ?? "--"}, Abnormal: ${data?.isAbnormal ?? "--"}`
       );
 
       await fetchLogs();
@@ -131,18 +115,24 @@ useEffect(() => {
     }
   };
 
+  // ✅ Single effect only (no duplicates)
   useEffect(() => {
+    let isMounted = true;
+
     (async () => {
       setLoading(true);
       await fetchLogs();
-      setLoading(false);
+      if (isMounted) setLoading(false);
     })();
 
-    // Auto refresh every 5 seconds
     intervalRef.current = setInterval(fetchLogs, 5000);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      isMounted = false;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -202,7 +192,7 @@ useEffect(() => {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 120 }}
         >
           {loading ? (
             <View style={{ paddingTop: 20 }}>
@@ -252,9 +242,7 @@ useEffect(() => {
                 </Text>
 
                 <Text style={styles.meta}>
-                  Accel: {(l.accelX ?? 0).toFixed(2)}, {(l.accelY ?? 0).toFixed(
-                    2
-                  )}
+                  Accel: {(l.accelX ?? 0).toFixed(2)}, {(l.accelY ?? 0).toFixed(2)}
                   , {(l.accelZ ?? 0).toFixed(2)}
                 </Text>
 

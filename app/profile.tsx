@@ -220,7 +220,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
           <View style={styles.card}>
             {/* Avatar + Name */}
             <View style={styles.avatarRow}>

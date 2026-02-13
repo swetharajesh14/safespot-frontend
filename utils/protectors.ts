@@ -9,9 +9,11 @@ export const fetchProtectors = async (): Promise<Protector[]> => {
   const data = await res.json();
 
   // backend returns array of protectors
-  return (Array.isArray(data) ? data : []).map((p: any) => ({
+ return (Array.isArray(data) ? data : [])
+  .map((p: any) => ({
     _id: String(p._id),
     name: String(p.name || "Protector"),
-    phone: String(p.phone || ""),
-  })).filter((p) => p.phone.length >= 8);
+    phone: String(p.phone || "").replace(/\s+/g, ""), // remove spaces
+  }))
+  .filter((p) => p.phone.length >= 8);
 };

@@ -17,10 +17,6 @@ import { useRouter } from "expo-router";
 import * as Contacts from "expo-contacts";
 import { startMotionTracking } from "../../tasks/motionTracker";
 
-useEffect(() => {
-  startMotionTracking();
-}, []);
-
 const { width } = Dimensions.get("window");
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
@@ -31,9 +27,15 @@ type Protector = {
   photo: string;
   phone: string;
 };
+
 export default function SafeSpotIndex() {
   const nav = useRouter();
   const [protectors, setProtectors] = useState<Protector[]>([]);
+
+  // ✅ FIX: hooks must be inside the component
+  useEffect(() => {
+    startMotionTracking();
+  }, []);
 
   const fetchProtectors = async () => {
     try {
@@ -41,19 +43,37 @@ export default function SafeSpotIndex() {
       if (!res.ok) return;
       const data = await res.json();
 
-    const formattedData = data.map((p: any) => ({
-  _id: String(p._id),
-  name: p.name,
-  photo: p.photo || "https://via.placeholder.com/150",
-  phone: p.phone,
-}));
+      const formattedData = data.map((p: any) => ({
+        _id: String(p._id),
+        name: p.name,
+        photo: p.photo || "https://via.placeholder.com/150",
+        phone: p.phone,
+      }));
 
       setProtectors(formattedData);
     } catch (e) {
       console.log("Fetch protectors failed:", e);
     }
   };
+const deleteProtector = async (protectorId: string) => {
+  try {
+    const res = await fetch(`${API_URL}/api/protectors/${protectorId}`, {
+      method: "DELETE",
+    });
+    const data = await res.json().catch(() => ({}));
 
+    if (!res.ok) {
+      Alert.alert("Delete failed", data?.message || "Server error");
+      return;
+    }
+
+    // ✅ update UI immediately
+    setProtectors((prev) => prev.filter((p) => p._id !== protectorId));
+    Alert.alert("Removed", "Protector removed successfully");
+  } catch (e: any) {
+    Alert.alert("Delete failed", e?.message || "Network error");
+  }
+};
   const handleAddProtector = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== "granted") {
@@ -97,23 +117,37 @@ export default function SafeSpotIndex() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <LinearGradient colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]} style={styles.background}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+      <LinearGradient
+        colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]}
+        style={styles.background}
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 30 }}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.topSpacer} />
 
           {/* Header */}
           <View style={styles.headerRow}>
             <View style={styles.headerTextWrapper}>
               <Text style={styles.greetingText}>SafeSpot</Text>
-              <Text style={styles.subGreeting}>You&apos;re always safe in SafeSpot</Text>
+              <Text style={styles.subGreeting}>
+                You&apos;re always safe in SafeSpot
+              </Text>
             </View>
 
             <View style={styles.headerIcons}>
-              <TouchableOpacity onPress={() => nav.push("/(dock)/journey")} style={styles.headerIconBtn}>
+              <TouchableOpacity
+                onPress={() => nav.push("/(dock)/journey")}
+                style={styles.headerIconBtn}
+              >
                 <Ionicons name="map-outline" size={22} color="#7A294E" />
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => nav.push("/(dock)/profile")} style={styles.headerIconBtn}>
+              <TouchableOpacity
+                onPress={() => nav.push("/(dock)/profile")}
+                style={styles.headerIconBtn}
+              >
                 <Ionicons name="person-outline" size={22} color="#7A294E" />
               </TouchableOpacity>
             </View>
@@ -139,32 +173,40 @@ export default function SafeSpotIndex() {
             <Ionicons name="chevron-forward" size={20} color="#7A294E" />
           </TouchableOpacity>
 
-          {/* My Circle */}
-          <View style={[styles.gridCard, { width: width - 50 }]}>
-            <Text style={styles.cardTitle}>My Circle</Text>
+         {/* My Circle */}
+              <View style={[styles.gridCard, { width: width - 50 }]}>
+                <Text style={styles.cardTitle}>My Circle</Text>
 
-            <View style={styles.circleRow}>
-              <TouchableOpacity style={styles.plusBtn} onPress={handleAddProtector}>
-                <Ionicons name="add" size={22} color="#7A294E" />
-              </TouchableOpacity>
+                <View style={styles.circleRow}>
+                  <TouchableOpacity style={styles.plusBtn} onPress={handleAddProtector}>
+                    <Ionicons name="add" size={22} color="#7A294E" />
+                  </TouchableOpacity>
 
-              {protectors.length > 0 ? (
-                  protectors.map((p) => (
-                    <TouchableOpacity key={p._id} style={{ marginLeft: -12 }}>
-                      <Image source={{ uri: p.photo }} style={styles.circlePhoto} />
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <View style={styles.emptyState}>
-                    <Ionicons name="shield-checkmark-outline" size={24} color="#A07A88" />
-                  </View>
-                )}
-            </View>
-          </View>
-
+                  {protectors.length > 0 ? (
+                    protectors.map((p) => (
+                      <TouchableOpacity
+                        key={p._id}
+                        style={{ marginLeft: -12 }}
+                        onLongPress={() => {
+                          Alert.alert("Remove protector?", `${p.name}\n${p.phone}`, [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Remove", style: "destructive", onPress: () => deleteProtector(p._id) },
+                          ]);
+                        }}
+                      >
+                        <Image source={{ uri: p.photo }} style={styles.circlePhoto} />
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="shield-checkmark-outline" size={24} color="#A07A88" />
+                    </View>
+                  )}
+                </View>
+              </View>
           {/* Map */}
           <View style={styles.menuGrid}>
-            <TouchableOpacity style={styles.menuButton} onPress={() => nav.push("/map")}>
+            <TouchableOpacity style={styles.menuButton} onPress={() => nav.push("/(home)/map")}>
               <View style={styles.iconCircle}>
                 <Ionicons name="map" size={32} color="#7A294E" />
               </View>

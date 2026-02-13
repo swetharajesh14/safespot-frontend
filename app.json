@@ -21,6 +21,8 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeSpot protects you even when the app is closed.",
         "UIBackgroundModes": [
           "location",
+          "fetch",
+          "location",
           "fetch"
         ]
       }
@@ -32,13 +34,21 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "SEND_SMS",
+        "CALL_PHONE",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
-        "SEND_SMS",
-    "CALL_PHONE"
+        "READ_CONTACTS"
       ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAf2DgOxVs7Zm2ueCNBHewI9mrl1C83adU"
+        }
+      },
       "edgeToEdgeEnabled": true
     },
     "web": {
@@ -53,6 +63,12 @@
       "eas": {
         "projectId": "98bb30ee-82e9-41ad-960e-a5e286026057"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/98bb30ee-82e9-41ad-960e-a5e286026057"
     }
   }
 }

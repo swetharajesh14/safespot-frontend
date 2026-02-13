@@ -1,11 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator, Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  RefreshControl,
+  ActivityIndicator,
+  Dimensions,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
 import { BACKEND_URL, USER_ID } from "../../constants/api";
 
 type SummaryPoint = {
-  label: string;        // YYYY-MM-DD
+  label: string; // YYYY-MM-DD
   activeMins: number;
   avgSpeed: number;
   stability: number;
@@ -32,26 +40,27 @@ type SummaryResponse = {
 const { width } = Dimensions.get("window");
 
 const toDayName = (yyyy_mm_dd: string) => {
-  // label -> Mon/Tue...
   const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { weekday: "short" }); // Mon
+  return dt.toLocaleDateString("en-IN", { weekday: "short" });
 };
 
 const niceDate = (yyyy_mm_dd: string) => {
   const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); // 10 Feb
+  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 };
 
 // simple bar chart (no extra libs)
 function MiniBarChart({ data, height = 110 }: { data: number[]; height?: number }) {
   const max = Math.max(1, ...data);
+  const barW = Math.max(3, Math.floor((width - 80) / Math.max(7, data.length)) - 2);
+
   return (
     <View style={[styles.chartWrap, { height }]}>
       {data.map((v, i) => {
         const h = Math.max(4, Math.round((v / max) * (height - 18)));
-        return <View key={i} style={[styles.bar, { height: h }]} />;
+        return <View key={i} style={[styles.bar, { height: h, width: barW }]} />;
       })}
     </View>
   );
@@ -64,11 +73,19 @@ export default function MovementAnalysis() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchSummary = async (which: "day" | "week" | "month") => {
-    const url = `${BACKEND_URL}/api/history/${USER_ID}/summary/${which}`;
+    const url =
+      which === "month"
+        ? `${BACKEND_URL}/api/history/${USER_ID}/summary/month`
+        : `${BACKEND_URL}/api/history/${USER_ID}/summary/${which}`;
+
     const res = await fetch(url);
-    const json = (await res.json()) as SummaryResponse;
-    if (!res.ok || !json?.ok) throw new Error("Summary fetch failed");
-    return json;
+    const raw = await res.json();
+
+    if (!res.ok || !raw?.ok) {
+      throw new Error(raw?.message || "Summary fetch failed");
+    }
+
+    return raw as SummaryResponse;
   };
 
   const load = async (which = tab) => {
@@ -76,6 +93,9 @@ export default function MovementAnalysis() {
     try {
       const s = await fetchSummary(which);
       setData(s);
+    } catch (e) {
+      console.log("Movement summary error:", e);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -83,7 +103,6 @@ export default function MovementAnalysis() {
 
   useEffect(() => {
     load(tab);
-    // live refresh every 8 sec so you SEE changes
     const id = setInterval(() => load(tab), 8000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,13 +113,15 @@ export default function MovementAnalysis() {
     try {
       const s = await fetchSummary(tab);
       setData(s);
-    } catch {}
-    setRefreshing(false);
+    } catch (e) {
+      console.log("Refresh error:", e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const avgSeries = useMemo(() => {
     if (!data?.series?.length) return [];
-    // Graph: Active minutes per point (day=1 bar, week=7 bars, month=days)
     return data.series.map((p) => p.activeMins);
   }, [data]);
 
@@ -125,7 +146,9 @@ export default function MovementAnalysis() {
                 onPress={() => setTab(k)}
                 style={[styles.tab, tab === k && styles.tabActive]}
               >
-                <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>{k.toUpperCase()}</Text>
+                <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>
+                  {k.toUpperCase()}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -139,14 +162,12 @@ export default function MovementAnalysis() {
         ) : !data ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyText}>No data</Text>
-            <Text style={styles.emptySub}>
-              Check BACKEND_URL is your PC IP (not Render) and phone is on same Wi-Fi.
-            </Text>
+            <Text style={styles.emptySub}>Check backend is reachable and logs exist.</Text>
           </View>
         ) : (
           <ScrollView
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={{ paddingBottom: 40 }}
+            contentContainerStyle={{ paddingBottom: 120 }}
           >
             {/* Cards */}
             <View style={styles.cardsRow}>
@@ -179,7 +200,7 @@ export default function MovementAnalysis() {
 
               {data.series.map((p, idx) => (
                 <View key={p.label} style={[styles.row, idx === 0 && { marginTop: 10 }]}>
-                  <Text style={styles.rowLeft}>{labels[idx]}</Text>
+                  <Text style={[styles.rowLeft, tab === "month" && { width: 40 }]}>{labels[idx]}</Text>
                   <Text style={styles.rowMid}>{p.activeMins} mins</Text>
                   <Text style={styles.rowRight}>{p.stability}%</Text>
                 </View>
@@ -195,7 +216,9 @@ export default function MovementAnalysis() {
 
               <View style={styles.xLabels}>
                 {labels.slice(0, 8).map((l, i) => (
-                  <Text key={i} style={styles.xLabel}>{l}</Text>
+                  <Text key={i} style={styles.xLabel}>
+                    {l}
+                  </Text>
                 ))}
                 {labels.length > 8 && <Text style={styles.xLabel}>…</Text>}
               </View>
@@ -252,7 +275,7 @@ const styles = StyleSheet.create({
   tableTitle: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
 
   row: { flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F6E6EE" },
-  rowLeft: { width: 80, fontWeight: "900", color: "#7A294E" },
+  rowLeft: { width: 70, fontWeight: "900", color: "#7A294E" },
   rowMid: { flex: 1, fontWeight: "800", color: "#A07A88" },
   rowRight: { width: 70, textAlign: "right", fontWeight: "900", color: "#7A294E" },
 
@@ -267,11 +290,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   bar: {
-    width: 10,
-    borderRadius: 8,
-    backgroundColor: "#7A294E",
-    opacity: 0.85,
-  },
+  borderRadius: 8,
+  backgroundColor: "#7A294E",
+  opacity: 0.85,
+},
 
   xLabels: { flexDirection: "row", gap: 10, marginTop: 6 },
   xLabel: { fontSize: 10, fontWeight: "800", color: "#A07A88" },
@@ -287,4 +309,5 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
   emptySub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88", textAlign: "center" },
+
 });

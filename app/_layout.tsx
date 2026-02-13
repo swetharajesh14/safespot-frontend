@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Stack } from "expo-router";
+import { Slot } from "expo-router";
 import { startJourneyTracking } from "../tasks/locationTask";
 
 export default function RootLayout() {
@@ -11,25 +11,14 @@ export default function RootLayout() {
         if (startedOnce.current) return;
         startedOnce.current = true;
 
-        // ✅ Auto-start tracking when app is opened
         await startJourneyTracking();
         console.log("✅ Auto Journey tracking started");
       } catch (e: any) {
         console.log("⚠️ Tracking not started:", e?.message || e);
-        // Don’t alert here (annoying). We can show status in Settings later.
       }
     })();
   }, []);
 
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {/* your entry route */}
-      <Stack.Screen name="index" />
-
-      {/* route groups */}
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(dock)" />
-      <Stack.Screen name="(home)" />
-    </Stack>
-  );
+  // ✅ IMPORTANT: must mount navigation immediately
+  return <Slot />;
 }

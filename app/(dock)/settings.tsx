@@ -17,8 +17,6 @@ export default function Settings() {
   const [on, setOn] = useState(false);
 
 
-
-
 const start = async () => {
   try {
     await startMotionTracking();

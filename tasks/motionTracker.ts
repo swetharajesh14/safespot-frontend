@@ -2,6 +2,8 @@ import { Accelerometer, Gyroscope } from "expo-sensors";
 import * as Location from "expo-location";
 import { sendSOS } from "../utils/sendSOS";
 
+const FORCE_ABNORMAL = true; // ✅ true for testing, false for real detection
+
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
 
@@ -27,13 +29,10 @@ export const startMotionTracking = async () => {
         accuracy: Location.Accuracy.Balanced,
       });
 
-      const latitude = loc.coords.latitude;
-      const longitude = loc.coords.longitude;
-
       const payload = {
         userId: USER_ID,
-        latitude,
-        longitude,
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
         speed: loc.coords.speed ?? 0,
         accelX: lastAccel.x,
         accelY: lastAccel.y,
@@ -51,13 +50,17 @@ export const startMotionTracking = async () => {
 
       const data = await res.json();
 
-     if (data?.isAbnormal === true && !sosCooldown) {
-      sosCooldown = true;
+      if ((FORCE_ABNORMAL || data?.isAbnormal === true) && !sosCooldown) {
+        sosCooldown = true;
 
-      await sendSOS(payload.latitude, payload.longitude);
+        await sendSOS(
+          payload.latitude,
+          payload.longitude,
+          FORCE_ABNORMAL ? "Manual test trigger" : "Auto abnormal detection"
+        );
 
-      setTimeout(() => (sosCooldown = false), 3 * 60 * 1000); // 3 min cooldown
-    }
+        setTimeout(() => (sosCooldown = false), 3 * 60 * 1000); // 3 min cooldown
+      }
     } catch (e) {
       console.log("motion tick error", e);
     }

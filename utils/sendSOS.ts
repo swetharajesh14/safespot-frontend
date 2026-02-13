@@ -1,10 +1,11 @@
 import SmsAndroid from "react-native-get-sms-android";
-import { Linking } from "react-native";
+import { Linking, Alert } from "react-native";
 import { fetchProtectors } from "./protectors";
 
 export const sendSOS = async (
   latitude: number,
-  longitude: number
+  longitude: number,
+  reason = "SOS"
 ) => {
   try {
     const protectors = await fetchProtectors();
@@ -12,11 +13,12 @@ export const sendSOS = async (
 
     const message =
       `🚨 EMERGENCY ALERT 🚨\n\n` +
-      `Abnormal movement detected.\n\n` +
+      `${reason}\n\n` +
       `📍 Location:\nhttps://maps.google.com/?q=${latitude},${longitude}`;
 
-    // ✅ 1. Send SMS to all protectors
+    // 1) SMS to all protectors
     for (const p of protectors) {
+      if (!p?.phone) continue;
       SmsAndroid.autoSend(
         p.phone,
         message,
@@ -25,10 +27,19 @@ export const sendSOS = async (
       );
     }
 
-    // ✅ 2. Call FIRST protector automatically
-    const firstPhone = protectors[0].phone;
-    await Linking.openURL(`tel:${firstPhone}`);
-
+    // 2) Auto call first protector (after 2 sec)
+    const firstPhone = protectors[0]?.phone;
+    if (firstPhone) {
+      setTimeout(async () => {
+        const url = `tel:${firstPhone}`;
+        const canOpen = await Linking.canOpenURL(url);
+        if (!canOpen) {
+          Alert.alert("Call failed", "Phone cannot place calls on this device.");
+          return;
+        }
+        await Linking.openURL(url);
+      }, 2000);
+    }
   } catch (e) {
     console.log("sendSOS error:", e);
   }
