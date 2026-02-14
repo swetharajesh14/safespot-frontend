@@ -51,18 +51,39 @@ const niceDate = (yyyy_mm_dd: string) => {
   return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 };
 
-// simple bar chart (no extra libs)
-function MiniBarChart({ data, height = 110 }: { data: number[]; height?: number }) {
+// ✅ Aligned bar chart: each bar + label share the same column (perfect alignment)
+function MiniBarChart({
+  data,
+  labels,
+  height = 110,
+}: {
+  data: number[];
+  labels: string[];
+  height?: number;
+}) {
   const max = Math.max(1, ...data);
-  const barW = Math.max(3, Math.floor((width - 80) / Math.max(7, data.length)) - 2);
+
+  // fixed column width for neat alignment (month can scroll horizontally)
+  const CHART_INNER_W = width - 60; // same as card inner width feel
+  const colW = Math.max(18, Math.floor(CHART_INNER_W / 7)); // base width; scroll handles overflow
+  const barW = Math.max(10, Math.floor(colW * 0.6));
 
   return (
-    <View style={[styles.chartWrap, { height }]}>
-      {data.map((v, i) => {
-        const h = Math.max(4, Math.round((v / max) * (height - 18)));
-        return <View key={i} style={[styles.bar, { height: h, width: barW }]} />;
-      })}
-    </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={[styles.chartRow, { height }]}>
+        {data.map((v, i) => {
+          const h = Math.max(4, Math.round((v / max) * (height - 28))); // reserve label space
+          return (
+            <View key={i} style={[styles.col, { width: colW }]}>
+              <View style={[styles.bar, { height: h, width: barW }]} />
+              <Text numberOfLines={1} style={styles.xLabel}>
+                {labels[i] ?? ""}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -212,16 +233,8 @@ export default function MovementAnalysis() {
               <Text style={styles.tableTitle}>Average Activity Graph</Text>
               <Text style={styles.graphSub}>Bars = active minutes</Text>
 
-              <MiniBarChart data={avgSeries} />
-
-              <View style={styles.xLabels}>
-                {labels.slice(0, 8).map((l, i) => (
-                  <Text key={i} style={styles.xLabel}>
-                    {l}
-                  </Text>
-                ))}
-                {labels.length > 8 && <Text style={styles.xLabel}>…</Text>}
-              </View>
+              {/* ✅ Month shows all 31 days (scroll horizontally), perfectly aligned */}
+              <MiniBarChart data={avgSeries} labels={labels} />
             </View>
           </ScrollView>
         )}
@@ -281,22 +294,29 @@ const styles = StyleSheet.create({
 
   graphSub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88" },
 
-  chartWrap: {
+  // ✅ Perfectly aligned chart layout
+  chartRow: {
     marginTop: 12,
-    width: width - 60,
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 6,
+  },
+  col: {
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   bar: {
-  borderRadius: 8,
-  backgroundColor: "#7A294E",
-  opacity: 0.85,
-},
-
-  xLabels: { flexDirection: "row", gap: 10, marginTop: 6 },
-  xLabel: { fontSize: 10, fontWeight: "800", color: "#A07A88" },
+    borderRadius: 8,
+    backgroundColor: "#7A294E",
+    opacity: 0.85,
+  },
+  xLabel: {
+    marginTop: 6,
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#A07A88",
+    textAlign: "center",
+  },
 
   emptyBox: {
     marginTop: 20,
@@ -309,5 +329,4 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
   emptySub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88", textAlign: "center" },
-
 });

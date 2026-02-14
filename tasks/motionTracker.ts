@@ -1,8 +1,10 @@
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import * as Location from "expo-location";
 import { sendSOS } from "../utils/sendSOS";
+import { Alert } from "react-native";
+import * as SMS from "expo-sms";
 
-const FORCE_ABNORMAL = true; // ✅ true for testing, false for real detection
+const FORCE_ABNORMAL = false; // ✅ true for testing, false for real detection
 
 const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
@@ -48,19 +50,40 @@ export const startMotionTracking = async () => {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+let data: any = {};
+try {
+  data = text ? JSON.parse(text) : {};
+} catch {
+  console.log("history response not JSON:", text);
+}
 
-      if ((FORCE_ABNORMAL || data?.isAbnormal === true) && !sosCooldown) {
-        sosCooldown = true;
+if ((FORCE_ABNORMAL || data?.isAbnormal === true) && !sosCooldown) {
+  sosCooldown = true;
 
-        await sendSOS(
-          payload.latitude,
-          payload.longitude,
-          FORCE_ABNORMAL ? "Manual test trigger" : "Auto abnormal detection"
-        );
+  Alert.alert(
+    "Are you safe?",
+    "Abnormal movement detected.",
+    [
+      { text: "Yes", onPress: () => (sosCooldown = false) },
+      {
+        text: "No",
+        style: "destructive",
+        onPress: async () => {
+          await sendSOS(payload.latitude, payload.longitude, "User selected NO");
+          sosCooldown = false;
+        },
+      },
+    ]
+  );
 
-        setTimeout(() => (sosCooldown = false), 3 * 60 * 1000); // 3 min cooldown
-      }
+  setTimeout(async () => {
+    if (sosCooldown) {
+      await sendSOS(payload.latitude, payload.longitude, "No response - auto SOS");
+      sosCooldown = false;
+    }
+  }, 15000);
+} 
     } catch (e) {
       console.log("motion tick error", e);
     }

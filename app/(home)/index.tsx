@@ -16,6 +16,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Contacts from "expo-contacts";
 import { startMotionTracking } from "../../tasks/motionTracker";
+import * as Notifications from "expo-notifications";
+
+
 
 const { width } = Dimensions.get("window");
 const API_URL = "https://safespot-backend-vx2w.onrender.com";

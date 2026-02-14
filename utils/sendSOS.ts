@@ -1,47 +1,104 @@
-import { Alert, Platform } from "react-native";
-import { fetchProtectors } from "./protectors";
+import { Alert, Linking, Platform } from "react-native";
 import RNImmediatePhoneCall from "react-native-immediate-phone-call";
+import { fetchProtectors } from "./protectors";
+import { ensureCallPermission } from "./callPermission";
 
-const API_URL = "https://safespot-backend-vx2w.onrender.com";
 const USER_ID = "Swetha_01";
 
-export const sendSOS = async (lat: number, lng: number, reason = "SOS") => {
+const cleanPhone = (p: any) => String(p || "").replace(/[^\d+]/g, "");
+
+/* ===========================
+   SMS Composer (User taps Send)
+=========================== */
+async function openSmsComposer(recipients: string[], body: string) {
+  const to = recipients.map(cleanPhone).filter(Boolean);
+
+  if (!to.length) {
+    Alert.alert("SOS", "No valid protector numbers found.");
+    return;
+  }
+
+  const numbers = to.join(",");
+  const encoded = encodeURIComponent(body);
+
+  const url =
+    Platform.OS === "ios"
+      ? `sms:${numbers}&body=${encoded}`
+      : `sms:${numbers}?body=${encoded}`;
+
+  const can = await Linking.canOpenURL(url);
+  if (!can) {
+    Alert.alert("SMS", "Cannot open SMS app on this device.");
+    return;
+  }
+
+  await Linking.openURL(url);
+}
+
+/* ===========================
+   Auto Call (Android only)
+=========================== */
+async function autoCallAndroid(phone: string) {
+  const cleaned = cleanPhone(phone);
+  if (!cleaned) return;
+
+  if (Platform.OS !== "android") {
+    Alert.alert("Call", "Auto-call is supported only on Android.");
+    return;
+  }
+
+  const ok = await ensureCallPermission();
+  if (!ok) {
+    Alert.alert("Permission", "Call permission not granted.");
+    return;
+  }
+
   try {
-    // 1) Backend sends SMS to all protectors (Fast2SMS)
-    await fetch(`${API_URL}/api/sos/trigger`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: USER_ID, lat, lng, intensity: reason }),
-    });
+    RNImmediatePhoneCall.immediatePhoneCall(cleaned);
+  } catch (e: any) {
+    Alert.alert("Call failed", e?.message || "Unable to start call.");
+  }
+}
 
-    // 2) Auto-call first protector (no user tap)
+/* ===========================
+   Main SOS Function
+=========================== */
+export const sendSOS = async (
+  lat: number,
+  lng: number,
+  reason = "SOS"
+) => {
+  try {
     const protectors = await fetchProtectors();
-    const firstPhoneRaw = protectors[0]?.phone;
 
-    if (!firstPhoneRaw) {
-      Alert.alert("SOS", "No protector phone found to call.");
+    if (!protectors.length) {
+      Alert.alert("SOS", "No protectors found. Add at least one protector.");
       return;
     }
 
-    // clean: remove spaces; keep +91 allowed
-    const firstPhone = String(firstPhoneRaw).replace(/\s+/g, "");
+    const phones = protectors
+      .map((p) => p.phone)
+      .filter(Boolean)
+      .map(cleanPhone);
 
-    // Important: Android only (this lib is Android)
-    if (Platform.OS !== "android") {
-      Alert.alert("SOS", "Auto-call supported only on Android in this build.");
-      return;
+    const firstPhone = phones[0];
+
+    const message =
+      `🚨 SafeSpot SOS 🚨\n` +
+      `User: ${USER_ID}\n` +
+      `Reason: ${reason}\n` +
+      `Location: https://maps.google.com/?q=${lat},${lng}`;
+
+    // 1️⃣ Open SMS app (user taps Send)
+    await openSmsComposer(phones, message);
+
+    // 2️⃣ Auto call first protector
+    if (firstPhone) {
+      setTimeout(() => autoCallAndroid(firstPhone), 1200);
     }
 
-    // Small delay so user sees alert + SMS request completes
-    setTimeout(() => {
-      try {
-        RNImmediatePhoneCall.immediatePhoneCall(firstPhone);
-      } catch (e: any) {
-        Alert.alert("Call failed", e?.message || "Unable to start call.");
-      }
-    }, 800);
   } catch (e: any) {
     console.log("sendSOS error:", e?.message || e);
-    Alert.alert("SOS error", e?.message || "Failed to trigger SOS.");
+    Alert.alert("SOS", "Something went wrong while sending SOS.");
   }
 };
