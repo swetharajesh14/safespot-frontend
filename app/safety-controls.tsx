@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { getSettings, saveSettings, SafeSpotSettings } from '../utils/settingsStorage';
 
 export default function SafetyControlsScreen() {
 
@@ -11,6 +12,23 @@ export default function SafetyControlsScreen() {
   const [nightSafety, setNightSafety] = useState(true);
   const [silentSOS, setSilentSOS] = useState(false);
   const [lowBatteryMode, setLowBatteryMode] = useState(true);
+  const [automaticSMS, setAutomaticSMS] = useState(false);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    const settings = await getSettings();
+    setNightSafety(settings.nightSafety);
+    setSilentSOS(settings.silentSOS);
+    setLowBatteryMode(settings.lowBatteryMode);
+    setAutomaticSMS(settings.automaticSMS);
+  };
+
+  const updateSetting = async (key: keyof SafeSpotSettings, value: boolean) => {
+    await saveSettings({ [key]: value });
+  };
 
   return (
     <View style={styles.container}>
@@ -39,7 +57,7 @@ export default function SafetyControlsScreen() {
                   <Text style={styles.rowSub}>Boost tracking + alerts after evening</Text>
                 </View>
               </View>
-              <Switch value={nightSafety} onValueChange={setNightSafety} />
+              <Switch value={nightSafety} onValueChange={(value) => { setNightSafety(value); updateSetting('nightSafety', value); }} />
             </View>
 
             <View style={styles.divider} />
@@ -52,7 +70,20 @@ export default function SafetyControlsScreen() {
                   <Text style={styles.rowSub}>Send SOS without sound</Text>
                 </View>
               </View>
-              <Switch value={silentSOS} onValueChange={setSilentSOS} />
+              <Switch value={silentSOS} onValueChange={(value) => { setSilentSOS(value); updateSetting('silentSOS', value); }} />
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="paper-plane-outline" size={18} color="#7A294E" />
+                <View>
+                  <Text style={styles.rowTitle}>Automatic SMS</Text>
+                  <Text style={styles.rowSub}>Send SOS without user interaction (Android only)</Text>
+                </View>
+              </View>
+              <Switch value={automaticSMS} onValueChange={(value) => { setAutomaticSMS(value); updateSetting('automaticSMS', value); }} />
             </View>
 
             <View style={styles.divider} />
@@ -81,7 +112,7 @@ export default function SafetyControlsScreen() {
                   <Text style={styles.rowSub}>Keep tracking alive, reduce UI</Text>
                 </View>
               </View>
-              <Switch value={lowBatteryMode} onValueChange={setLowBatteryMode} />
+              <Switch value={lowBatteryMode} onValueChange={(value) => { setLowBatteryMode(value); updateSetting('lowBatteryMode', value); }} />
             </View>
 
             <View style={styles.divider} />

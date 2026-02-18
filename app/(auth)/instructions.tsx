@@ -63,7 +63,7 @@ export default function Instructions() {
   }, []);
 
   const handleContinue = () => {
-    router.replace('/(home)');
+    router.replace('/(dock)/home');
   };
 
   return (

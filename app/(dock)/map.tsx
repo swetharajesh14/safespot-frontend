@@ -6,10 +6,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  Platform,
   Alert,
 } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE, Polyline, Region } from "react-native-maps";
+import MapView, { Marker, Polyline, Region, UrlTile } from "react-native-maps";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,6 +27,7 @@ export default function RealTimeMap() {
 
   const mapRef = useRef<MapView>(null);
   const watchSub = useRef<Location.LocationSubscription | null>(null);
+  const intervalRef = useRef<any>(null);
 
   const initialRegion: Region | null = useMemo(() => {
     if (!myLocation) return null;
@@ -40,27 +40,34 @@ export default function RealTimeMap() {
   }, [myLocation]);
 
   const fetchRoute = async () => {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 6000);
+
     try {
       setLoadingRoute(true);
-      const res = await fetch(`${BACKEND_URL}/api/history/${USER_ID}/latest?limit=250`);
-      const json = await res.json();
+
+      const res = await fetch(`${BACKEND_URL}/api/history/${USER_ID}/latest?limit=50`, {
+        signal: controller.signal,
+      });
+
+      const json = await res.json().catch(() => ({}));
 
       if (!res.ok || !json?.ok) {
-        console.log("Route fetch failed:", json);
+        console.log("Route fetch failed:", { status: res.status, json });
         return;
       }
 
       const coords: Coord[] = (json.logs || [])
         .filter((p: any) => p?.latitude != null && p?.longitude != null)
-        .map((p: any) => ({ latitude: p.latitude, longitude: p.longitude }))
-        .reverse(); // older -> newer
+        .map((p: any) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }))
+        .reverse();
 
       setRouteCoords(coords);
       setLastSync(new Date().toLocaleTimeString("en-IN"));
     } catch (e: any) {
       console.log("Route fetch error:", e?.message || e);
-      // Don't spam alerts; just log.
     } finally {
+      clearTimeout(t);
       setLoadingRoute(false);
     }
   };
@@ -90,63 +97,69 @@ export default function RealTimeMap() {
   };
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    const init = async () => {
       try {
-        // 1) Permission
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          Alert.alert("Permission needed", "Please allow location permission to use SafeZones Map.");
+          Alert.alert("Permission needed", "Please allow location permission to use the Map.");
           setLoadingMap(false);
           return;
         }
 
-        // 2) Get current location once (fast initial marker)
+        // Fast: last known
+        const last = await Location.getLastKnownPositionAsync();
+        if (!cancelled && last?.coords) {
+          setMyLocation({ latitude: last.coords.latitude, longitude: last.coords.longitude });
+          setLoadingMap(false);
+        }
+
+        // Current: Balanced is faster than High
         const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+          accuracy: Location.Accuracy.Balanced,
         });
 
-        setMyLocation({
-          latitude: current.coords.latitude,
-          longitude: current.coords.longitude,
-        });
-        setLoadingMap(false);
+        if (!cancelled) {
+          setMyLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+          setLoadingMap(false);
+        }
 
-        // 3) Watch live location
+        // Watch: reduce load
         watchSub.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 5 },
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
           (loc) => {
-            setMyLocation({
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-            });
+            if (cancelled) return;
+            setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
           }
         );
 
-        // 4) Fetch route from backend immediately + refresh periodically
         await fetchRoute();
-        const id = setInterval(fetchRoute, 8000);
-
-        return () => clearInterval(id);
+        intervalRef.current = setInterval(fetchRoute, 15000);
       } catch (e: any) {
         console.log("Map init error:", e?.message || e);
         setLoadingMap(false);
       }
-    })();
+    };
+
+    init();
 
     return () => {
+      cancelled = true;
+
       if (watchSub.current) watchSub.current.remove();
       watchSub.current = null;
+
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loadingMap || !initialRegion) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#7A294E" />
-        <Text style={{ marginTop: 10, color: "#8A5A6A", fontWeight: "700" }}>
-          Loading SafeZones map...
-        </Text>
+        <Text style={styles.loadingText}>Loading SafeZones map...</Text>
       </View>
     );
   }
@@ -155,25 +168,22 @@ export default function RealTimeMap() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Back */}
       <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
         <Ionicons name="arrow-back" size={24} color="#7A294E" />
       </TouchableOpacity>
 
-      {/* Recenter */}
       <TouchableOpacity style={styles.recenterBtn} onPress={recenter}>
         <Ionicons name="locate" size={22} color="#7A294E" />
       </TouchableOpacity>
 
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        initialRegion={initialRegion}
-        showsUserLocation={false} // we render our own marker to match your UI
-        showsMyLocationButton={false}
-      >
-        {/* You */}
+      <MapView ref={mapRef} style={styles.map} initialRegion={initialRegion}>
+        {/* OpenStreetMap tiles (no Google billing) */}
+        <UrlTile
+          urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maximumZ={19}
+          zIndex={-1}
+        />
+
         {myLocation && (
           <Marker coordinate={myLocation} title="You">
             <View style={styles.dotContainer}>
@@ -183,13 +193,9 @@ export default function RealTimeMap() {
           </Marker>
         )}
 
-        {/* Route line */}
-        {routeCoords.length > 1 && (
-          <Polyline coordinates={routeCoords} strokeWidth={4} strokeColor="#7A294E" />
-        )}
+        {routeCoords.length > 1 && <Polyline coordinates={routeCoords} strokeWidth={4} />}
       </MapView>
 
-      {/* Status Card */}
       <View style={styles.statusCard}>
         <View style={styles.statusHeader}>
           <View style={{ flex: 1, paddingRight: 10 }}>
@@ -238,6 +244,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#FFFBF0",
   },
+  loadingText: { marginTop: 10, color: "#8A5A6A", fontWeight: "700" },
 
   backBtn: {
     position: "absolute",
@@ -249,7 +256,6 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     elevation: 5,
   },
-
   recenterBtn: {
     position: "absolute",
     top: 50,
@@ -261,9 +267,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 
-  // Markers
   dotContainer: { justifyContent: "center", alignItems: "center", width: 44, height: 44 },
-
   myMarker: {
     width: 18,
     height: 18,
@@ -290,25 +294,14 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     elevation: 10,
   },
-
   statusHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-
   statusTitle: { fontWeight: "bold", fontSize: 18, color: "#7A294E" },
   statusText: { color: "#8A5A6A", marginTop: 2, fontSize: 13, fontWeight: "600" },
 
-  testBtn: {
-    backgroundColor: "#7A294E",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
+  testBtn: { backgroundColor: "#7A294E", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 },
   testBtnText: { color: "white", fontSize: 10, fontWeight: "bold" },
 
-  actionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 12,
-  },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 12 },
   smallBtn: {
     flexDirection: "row",
     alignItems: "center",
