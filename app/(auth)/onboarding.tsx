@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   View, Text, StyleSheet, Animated, Dimensions, TouchableOpacity 
 } from 'react-native';
+import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -13,6 +14,7 @@ export default function Onboarding() {
   const blob1Anim = useRef(new Animated.Value(0)).current;
   const blob2Anim = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(0)).current;
+  const [isCheckingLocation, setIsCheckingLocation] = useState(false);
 
   useEffect(() => {
     // Gentle floating movement for background shapes
@@ -35,6 +37,36 @@ export default function Onboarding() {
       useNativeDriver: true,
     }).start();
   }, []);
+
+  const handleBeginJourney = async () => {
+    setIsCheckingLocation(true);
+    try {
+      // First check if location services are enabled on the device
+      const enabled = await Location.hasServicesEnabledAsync();
+      
+      if (!enabled) {
+        // Location services are completely disabled on device
+        router.push('/(auth)/permissions');
+        return;
+      }
+      
+      // Check current location permission status
+      const { status } = await Location.getForegroundPermissionsAsync();
+      
+      if (status === 'granted') {
+        // Location is already enabled, go directly to home page
+        router.replace('/(dock)/home');
+      } else {
+        // Location permission is not granted (denied or not asked yet)
+        router.push('/(auth)/permissions');
+      }
+    } catch (error) {
+      // If there's an error checking permissions, default to permissions page
+      router.push('/(auth)/permissions');
+    } finally {
+      setIsCheckingLocation(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -66,7 +98,8 @@ export default function Onboarding() {
 
         <TouchableOpacity 
           activeOpacity={0.8}
-          onPress={() => router.push("/(auth)/permissions")}
+          onPress={handleBeginJourney}
+          disabled={isCheckingLocation}
           style={styles.buttonContainer}
         >
           <LinearGradient
@@ -75,8 +108,12 @@ export default function Onboarding() {
             end={{x: 1, y: 1}}
             style={styles.gentleButton}
           >
-            <Text style={styles.btnText}>Begin Journey</Text>
-            <Ionicons name="chevron-forward-outline" size={18} color="white" />
+            <Text style={styles.btnText}>
+              {isCheckingLocation ? "Checking..." : "Begin Journey"}
+            </Text>
+            {!isCheckingLocation && (
+              <Ionicons name="chevron-forward-outline" size={18} color="white" />
+            )}
           </LinearGradient>
         </TouchableOpacity>
 

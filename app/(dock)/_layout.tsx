@@ -13,18 +13,29 @@ export default function DockLayout() {
         tabBarStyle: {
           backgroundColor: "#ffffff",
           borderTopWidth: 0,
-          elevation: 10,
+          elevation: 12,
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 8,
-          height: Platform.OS === "ios" ? 78 : 64,
-          paddingBottom: Platform.OS === "ios" ? 18 : 10,
-          paddingTop: 8,
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.12,
+          shadowRadius: 12,
+          height: Platform.OS === "ios" ? 85 : 70,
+          paddingBottom: Platform.OS === "ios" ? 20 : 12,
+          paddingTop: 10,
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          position: "absolute",
+          bottom: 40, // ✅ 1 inch more down (from 80 to 40)
+          left: 0,
+          right: 0,
+          width: "100%",
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "700",
+          fontSize: 12,
+          fontWeight: "800",
+          marginTop: 4,
+        },
+        tabBarIconStyle: {
+          marginBottom: 2,
         },
       }}
     >
@@ -61,10 +72,10 @@ export default function DockLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Movement",
+          title: "Settings",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? "analytics" : "analytics-outline"}
+              name={focused ? "settings" : "settings-outline"}
               size={22}
               color={color}
             />

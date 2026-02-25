@@ -40,13 +40,13 @@ export default function Permissions() {
       if (status === 'granted') {
         // High-accuracy check (Original location)
         await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-        setTimeout(() => { router.replace('/(auth)/instructions'); }, 1000);
+        setTimeout(() => { router.replace('/(dock)/home'); }, 1000);
       } else {
         setIsVerifying(false);
       }
     } catch (error) {
       setIsVerifying(false);
-      router.replace('/(auth)/instructions');
+      router.replace('/(dock)/home');
     }
   };
 
@@ -92,7 +92,7 @@ export default function Permissions() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => router.replace('/(auth)/instructions')}>
+          <TouchableOpacity onPress={() => router.replace('/(dock)/home')}>
             <Text style={styles.skipText}>Not now, maybe later</Text>
           </TouchableOpacity>
         </View>

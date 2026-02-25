@@ -318,7 +318,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity style={styles.secondaryBtn} onPress={fetchUser}>
               <Ionicons name="refresh-outline" size={18} color="#7A294E" />
-              <Text style={styles.saveText}>Reload from MongoDB</Text>
+              <Text style={styles.saveText}>Refresh</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

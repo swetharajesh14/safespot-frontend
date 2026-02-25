@@ -1,332 +1,282 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl,
-  ActivityIndicator,
-  Dimensions,
-} from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { BACKEND_URL, USER_ID } from "../../constants/api";
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 
-type SummaryPoint = {
-  label: string; // YYYY-MM-DD
-  activeMins: number;
-  avgSpeed: number;
-  stability: number;
-  totalLogs: number;
-  abnormalLogs: number;
-};
-
-type SummaryResponse = {
-  ok: boolean;
-  range: "day" | "week" | "month";
-  dateKey?: string;
-  dateKeys?: string[];
-  year?: number;
-  month?: number;
-  cards: {
-    activeTime: string;
-    avgSpeed: string;
-    stability: string;
-    intensity: string;
-  };
-  series: SummaryPoint[];
-};
-
-const { width } = Dimensions.get("window");
-
-const toDayName = (yyyy_mm_dd: string) => {
-  const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { weekday: "short" });
-};
-
-const niceDate = (yyyy_mm_dd: string) => {
-  const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-};
-
-// ✅ Aligned bar chart: each bar + label share the same column (perfect alignment)
-function MiniBarChart({
-  data,
-  labels,
-  height = 110,
-}: {
-  data: number[];
-  labels: string[];
-  height?: number;
-}) {
-  const max = Math.max(1, ...data);
-
-  // fixed column width for neat alignment (month can scroll horizontally)
-  const CHART_INNER_W = width - 60; // same as card inner width feel
-  const colW = Math.max(18, Math.floor(CHART_INNER_W / 7)); // base width; scroll handles overflow
-  const barW = Math.max(10, Math.floor(colW * 0.6));
-
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={[styles.chartRow, { height }]}>
-        {data.map((v, i) => {
-          const h = Math.max(4, Math.round((v / max) * (height - 28))); // reserve label space
-          return (
-            <View key={i} style={[styles.col, { width: colW }]}>
-              <View style={[styles.bar, { height: h, width: barW }]} />
-              <Text numberOfLines={1} style={styles.xLabel}>
-                {labels[i] ?? ""}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    </ScrollView>
-  );
-}
+const { width, height } = Dimensions.get('window');
 
 export default function Settings() {
-  const [tab, setTab] = useState<"day" | "week" | "month">("day");
-  const [data, setData] = useState<SummaryResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const router = useRouter();
+  const [fadeAnim] = React.useState(new Animated.Value(0));
+  const [slideAnim] = React.useState(new Animated.Value(50));
 
-  const fetchSummary = async (which: "day" | "week" | "month") => {
-    const url =
-      which === "month"
-        ? `${BACKEND_URL}/api/history/${USER_ID}/summary/month`
-        : `${BACKEND_URL}/api/history/${USER_ID}/summary/${which}`;
+  React.useEffect(() => {
+    // Simple fade-in animation
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start();
 
-    const res = await fetch(url);
-    const raw = await res.json();
-
-    if (!res.ok || !raw?.ok) {
-      throw new Error(raw?.message || "Summary fetch failed");
-    }
-
-    return raw as SummaryResponse;
-  };
-
-  const load = async (which = tab) => {
-    setLoading(true);
-    try {
-      const s = await fetchSummary(which);
-      setData(s);
-    } catch (e) {
-      console.log("Movement summary error:", e);
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load(tab);
-    const id = setInterval(() => load(tab), 8000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const s = await fetchSummary(tab);
-      setData(s);
-    } catch (e) {
-      console.log("Refresh error:", e);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const avgSeries = useMemo(() => {
-    if (!data?.series?.length) return [];
-    return data.series.map((p) => p.activeMins);
-  }, [data]);
-
-  const labels = useMemo(() => {
-    if (!data?.series?.length) return [];
-    if (tab === "week") return data.series.map((p) => toDayName(p.label));
-    if (tab === "month") return data.series.map((p) => p.label.split("-")[2]); // 01..31
-    return data.series.map((p) => niceDate(p.label));
-  }, [data, tab]);
+    // Simple slide-up animation
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+  }, []);
 
   return (
-    <View style={{ flex: 1 }}>
-      <LinearGradient colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]} style={styles.bg}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Movement Analysis</Text>
-          <Text style={styles.sub}>Day · Week · Month summary (IST) · {USER_ID}</Text>
+    <View style={styles.container}>
+      <LinearGradient colors={['#FFFBF0', '#FDF2F7', '#F6E6EE']} style={styles.background}>
+        
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.push('/(dock)/home')}>
+          <Ionicons name="arrow-back" size={28} color="#7A294E" />
+        </TouchableOpacity>
 
-          <View style={styles.tabRow}>
-            {(["day", "week", "month"] as const).map((k) => (
-              <TouchableOpacity
-                key={k}
-                onPress={() => setTab(k)}
-                style={[styles.tab, tab === k && styles.tabActive]}
-              >
-                <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>
-                  {k.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {loading ? (
-          <View style={{ paddingTop: 30 }}>
-            <ActivityIndicator />
-            <Text style={styles.loadingText}>Loading summary...</Text>
-          </View>
-        ) : !data ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>No data</Text>
-            <Text style={styles.emptySub}>Check backend is reachable and logs exist.</Text>
-          </View>
-        ) : (
-          <ScrollView
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={{ paddingBottom: 120 }}
+        <ScrollView showsVerticalScrollIndicator={false}>
+          
+          <Animated.View 
+            style={[
+              styles.header,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
           >
-            {/* Cards */}
-            <View style={styles.cardsRow}>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Active Time</Text>
-                <Text style={styles.cardValue}>{data.cards.activeTime}</Text>
+            <Text style={styles.headerTitle}>About SafeSpot</Text>
+            <Text style={styles.headerSub}>Your Safety Companion</Text>
+          </Animated.View>
+
+          {/* WELCOME CARD */}
+          <Animated.View 
+            style={[
+              styles.welcomeCard,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <View style={styles.iconCircle}>
+              <Ionicons name="shield-checkmark" size={40} color="#2F8F6B" />
+            </View>
+            <Text style={styles.welcomeTitle}>Welcome to SafeSpot</Text>
+            <Text style={styles.welcomeText}>
+              We're here to keep you safe and connected with your loved ones, every step of the way.
+            </Text>
+          </Animated.View>
+
+          {/* HOW IT WORKS */}
+          <Animated.View 
+            style={[
+              styles.section,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.sectionTitle}>How SafeSpot Works</Text>
+            
+            <View style={styles.stepCard}>
+              <View style={styles.stepIcon}>
+                <Ionicons name="phone-portrait" size={24} color="#7A294E" />
               </View>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Stability</Text>
-                <Text style={styles.cardValue}>{data.cards.stability}</Text>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepTitle}>1. Your Phone Helps</Text>
+                <Text style={styles.stepText}>
+                  Your phone's sensors notice how you're moving - like walking, sitting, or if something unusual happens.
+                </Text>
               </View>
             </View>
 
-            <View style={styles.cardsRow}>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Avg Speed</Text>
-                <Text style={styles.cardValue}>{data.cards.avgSpeed}</Text>
+            <View style={styles.stepCard}>
+              <View style={styles.stepIcon}>
+                <Ionicons name="people" size={24} color="#7A294E" />
               </View>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Intensity</Text>
-                <Text style={styles.cardValue}>{data.cards.intensity}</Text>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepTitle}>2. Your Circle Cares</Text>
+                <Text style={styles.stepText}>
+                  Choose trusted friends and family who will be there for you when you need help.
+                </Text>
               </View>
             </View>
 
-            {/* Table */}
-            <View style={styles.tableCard}>
-              <Text style={styles.tableTitle}>
-                {tab === "day" ? "Today" : tab === "week" ? "Last 7 days" : "This month"} breakdown
-              </Text>
-
-              {data.series.map((p, idx) => (
-                <View key={p.label} style={[styles.row, idx === 0 && { marginTop: 10 }]}>
-                  <Text style={[styles.rowLeft, tab === "month" && { width: 40 }]}>{labels[idx]}</Text>
-                  <Text style={styles.rowMid}>{p.activeMins} mins</Text>
-                  <Text style={styles.rowRight}>{p.stability}%</Text>
-                </View>
-              ))}
+            <View style={styles.stepCard}>
+              <View style={styles.stepIcon}>
+                <Ionicons name="heart" size={24} color="#7A294E" />
+              </View>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepTitle}>3. We Watch Over You</Text>
+                <Text style={styles.stepText}>
+                  If something seems wrong, we'll check on you and let your circle know if you need help.
+                </Text>
+              </View>
             </View>
+          </Animated.View>
 
-            {/* Avg Graph */}
-            <View style={styles.tableCard}>
-              <Text style={styles.tableTitle}>Average Activity Graph</Text>
-              <Text style={styles.graphSub}>Bars = active minutes</Text>
+          {/* DATA PRIVACY */}
+          <Animated.View 
+            style={[
+              styles.section,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.sectionTitle}>Your Privacy Matters</Text>
+            
+            <View style={styles.privacyCard}>
+              <View style={styles.privacyItem}>
+                <Ionicons name="lock-closed" size={20} color="#2F8F6B" />
+                <Text style={styles.privacyText}>
+                  Your data stays private and secure. We never share it with anyone without your permission.
+                </Text>
+              </View>
 
-              {/* ✅ Month shows all 31 days (scroll horizontally), perfectly aligned */}
-              <MiniBarChart data={avgSeries} labels={labels} />
+              <View style={styles.privacyItem}>
+                <Ionicons name="eye-off" size={20} color="#2F8F6B" />
+                <Text style={styles.privacyText}>
+                  We only collect movement information to keep you safe - no personal photos, messages, or private details.
+                </Text>
+              </View>
+
+              <View style={styles.privacyItem}>
+                <Ionicons name="hand-left" size={20} color="#2F8F6B" />
+                <Text style={styles.privacyText}>
+                  You're always in control. You can stop sharing data anytime, right from your settings.
+                </Text>
+              </View>
             </View>
-          </ScrollView>
-        )}
+          </Animated.View>
+
+          {/* OUR PROMISE */}
+          <Animated.View 
+            style={[
+              styles.promiseCard,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.promiseTitle}>Our Promise to You</Text>
+            <Text style={styles.promiseText}>
+              SafeSpot was created with care to help you feel safer every day. We believe everyone deserves to feel protected and connected to people who care about them.
+            </Text>
+            <View style={styles.promiseFooter}>
+              <Text style={styles.signature}>With warmth and care,</Text>
+              <Text style={styles.teamName}>The SafeSpot Team</Text>
+            </View>
+          </Animated.View>
+
+        </ScrollView>
       </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, paddingTop: 40, paddingHorizontal: 16 },
+  container: { flex: 1 },
+  background: { flex: 1, paddingHorizontal: 20 },
+  backBtn: { marginTop: 50, marginBottom: 20 },
+  
+  header: { marginBottom: 30, alignItems: 'center' },
+  headerTitle: { fontSize: 32, fontWeight: '900', color: '#7A294E', textAlign: 'center' },
+  headerSub: { fontSize: 16, color: '#A07A88', fontWeight: '600', textAlign: 'center', marginTop: 5 },
 
-  header: { marginBottom: 12 },
-  title: { fontSize: 26, fontWeight: "900", color: "#7A294E" },
-  sub: { marginTop: 4, fontSize: 12, fontWeight: "700", color: "#A07A88" },
-
-  tabRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#7A294E",
-    backgroundColor: "rgba(255,255,255,0.7)",
+  welcomeCard: { 
+    backgroundColor: 'white', 
+    borderRadius: 24, 
+    padding: 25, 
+    marginBottom: 25,
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  tabActive: { backgroundColor: "#7A294E" },
-  tabText: { fontWeight: "900", fontSize: 12, color: "#7A294E" },
-  tabTextActive: { color: "white" },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EAF6F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  welcomeTitle: { fontSize: 24, fontWeight: '800', color: '#7A294E', marginBottom: 10, textAlign: 'center' },
+  welcomeText: { fontSize: 16, color: '#A07A88', textAlign: 'center', lineHeight: 24 },
 
-  loadingText: { textAlign: "center", marginTop: 10, fontWeight: "700", color: "#A07A88" },
+  section: { marginBottom: 25 },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#7A294E', marginBottom: 20 },
 
-  cardsRow: { flexDirection: "row", gap: 12, marginTop: 12 },
-  card: {
+  stepCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 15,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  stepIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F8F4F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  stepContent: { flex: 1 },
+  stepTitle: { fontSize: 18, fontWeight: '800', color: '#7A294E', marginBottom: 8 },
+  stepText: { fontSize: 15, color: '#A07A88', lineHeight: 22 },
+
+  privacyCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  privacyItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  privacyText: {
+    fontSize: 15,
+    color: '#A07A88',
+    lineHeight: 22,
+    marginLeft: 15,
     flex: 1,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
-  },
-  cardLabel: { fontSize: 11, fontWeight: "900", color: "#A07A88" },
-  cardValue: { marginTop: 8, fontSize: 16, fontWeight: "900", color: "#7A294E" },
-
-  tableCard: {
-    marginTop: 12,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
-  },
-  tableTitle: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
-
-  row: { flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F6E6EE" },
-  rowLeft: { width: 70, fontWeight: "900", color: "#7A294E" },
-  rowMid: { flex: 1, fontWeight: "800", color: "#A07A88" },
-  rowRight: { width: 70, textAlign: "right", fontWeight: "900", color: "#7A294E" },
-
-  graphSub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88" },
-
-  // ✅ Perfectly aligned chart layout
-  chartRow: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingVertical: 6,
-  },
-  col: {
-    alignItems: "center",
-    justifyContent: "flex-end",
-  },
-  bar: {
-    borderRadius: 8,
-    backgroundColor: "#7A294E",
-    opacity: 0.85,
-  },
-  xLabel: {
-    marginTop: 6,
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#A07A88",
-    textAlign: "center",
   },
 
-  emptyBox: {
-    marginTop: 20,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
-    alignItems: "center",
+  promiseCard: {
+    backgroundColor: '#F8F4F7',
+    borderRadius: 24,
+    padding: 25,
+    marginBottom: 30,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#EFE3EA',
   },
-  emptyText: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
-  emptySub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88", textAlign: "center" },
+  promiseTitle: { fontSize: 22, fontWeight: '800', color: '#7A294E', marginBottom: 15, textAlign: 'center' },
+  promiseText: { fontSize: 16, color: '#A07A88', textAlign: 'center', lineHeight: 24, marginBottom: 20 },
+  promiseFooter: { alignItems: 'center' },
+  signature: { fontSize: 14, color: '#A07A88', fontStyle: 'italic' },
+  teamName: { fontSize: 16, fontWeight: '700', color: '#7A294E', marginTop: 5 },
 });

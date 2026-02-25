@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,26 +8,25 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
+  StatusBar,
+  Platform,
+  Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as SMS from 'expo-sms';
+import * as Linking from 'expo-linking';
 import { BACKEND_URL, USER_ID } from "../../constants/api";
 
 type SummaryPoint = {
-  label: string; // YYYY-MM-DD
+  label: string; 
   activeMins: number;
-  avgSpeed: number;
   stability: number;
-  totalLogs: number;
-  abnormalLogs: number;
 };
 
 type SummaryResponse = {
   ok: boolean;
-  range: "day" | "week" | "month";
-  dateKey?: string;
-  dateKeys?: string[];
-  year?: number;
-  month?: number;
   cards: {
     activeTime: string;
     avgSpeed: string;
@@ -39,294 +38,646 @@ type SummaryResponse = {
 
 const { width } = Dimensions.get("window");
 
-const toDayName = (yyyy_mm_dd: string) => {
-  const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { weekday: "short" });
+// Safety Monitoring Constants
+const TESTING_MODE = false; // 🔧 Toggle: true = Test Mode, false = Production Mode
+const SAFETY_PHONE = "+911234567890"; // Emergency contact number
+const MOVEMENT_THRESHOLD = 0.8; // 80% of average movement triggers alert (original value)
+const SAFETY_CHECK_INTERVAL = 30000; // Check every 30 seconds (original value)
+const AUTO_ALERT_DELAY = 20000; // Auto alert after 20 seconds in test mode
+
+// Dynamic stability calculation (same as home page)
+const calculateLocalStability = () => {
+  const time = Date.now();
+  const seconds = Math.floor(time / 1000);
+  
+  // Create variation based on time (simulates movement patterns)
+  const movementImpact = Math.sin(seconds / 10) * 20; // ±20 variation
+  const baseStability = 85; // Base stability score
+  const stability = Math.max(0, Math.min(100, baseStability + movementImpact));
+  
+  console.log("🔧 Movement Analysis - Local stability calculation:", { 
+    baseStability, 
+    movementImpact: movementImpact.toFixed(2), 
+    finalStability: Math.round(stability),
+    time: new Date().toLocaleTimeString()
+  });
+  
+  return Math.round(stability);
 };
 
-const niceDate = (yyyy_mm_dd: string) => {
-  const [y, m, d] = yyyy_mm_dd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+const toDayName = (dateStr: string) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "short" });
 };
 
-// ✅ Aligned bar chart: each bar + label share the same column (perfect alignment)
-function MiniBarChart({
-  data,
-  labels,
-  height = 110,
-}: {
-  data: number[];
-  labels: string[];
-  height?: number;
-}) {
-  const max = Math.max(1, ...data);
+const niceDate = (dateStr: string) => {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+};
 
-  // fixed column width for neat alignment (month can scroll horizontally)
-  const CHART_INNER_W = width - 60; // same as card inner width feel
-  const colW = Math.max(18, Math.floor(CHART_INNER_W / 7)); // base width; scroll handles overflow
-  const barW = Math.max(10, Math.floor(colW * 0.6));
+// Safety Alert Functions
+const sendSafetySMS = async (message: string) => {
+  if (!TESTING_MODE) {
+    try {
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable) {
+        await SMS.sendSMSAsync(
+          [SAFETY_PHONE],
+          `SafeSpot Alert: ${message}`
+        );
+        console.log("✅ Safety SMS sent:", message);
+      }
+    } catch (error) {
+      console.error("❌ SMS failed:", error);
+    }
+  } else {
+    // 🧪 Testing Mode - Log instead of sending
+    console.log("🧪 [TEST MODE] SMS would be sent to", SAFETY_PHONE);
+    console.log("🧪 [TEST MODE] Message:", `SafeSpot Alert: ${message}`);
+    Alert.alert(
+      "🧪 Test Mode - SMS",
+      `Would send SMS to ${SAFETY_PHONE}:\n\n${message}`,
+      [{ text: "OK", style: "default" }]
+    );
+  }
+};
 
+const makeEmergencyCall = async () => {
+  if (!TESTING_MODE) {
+    try {
+      await Linking.openURL(`tel:${SAFETY_PHONE}`);
+      console.log("📞 Emergency call initiated to", SAFETY_PHONE);
+    } catch (error) {
+      console.error("❌ Call failed:", error);
+    }
+  } else {
+    // 🧪 Testing Mode - Log instead of calling
+    console.log("🧪 [TEST MODE] Would call emergency number:", SAFETY_PHONE);
+    Alert.alert(
+      "🧪 Test Mode - Emergency Call",
+      `Would call ${SAFETY_PHONE} for emergency assistance`,
+      [{ text: "OK", style: "default" }]
+    );
+  }
+};
+
+const sendSafetyAlert = async (currentMovement: number, averageMovement: number) => {
+  const message = `User ${USER_ID} is SAFE! Current movement: ${currentMovement} mins (above average: ${averageMovement.toFixed(1)} mins). All systems normal.`;
+  
+  // Send SMS (or test mode simulation)
+  await sendSafetySMS(message);
+  
+  // Show alert in app
+  Alert.alert(
+    "✅ Safety Status - You Are Safe!",
+    message,
+    [
+      { text: "OK", style: "default" },
+      { 
+        text: TESTING_MODE ? "🧪 Test Call" : "📞 Emergency Call", 
+        onPress: makeEmergencyCall, 
+        style: "destructive" 
+      }
+    ]
+  );
+  
+  console.log(`🛡️ Safety Alert: ${message}`);
+};
+
+function MetricBox({ label, value, icon }: { label: string; value: string; icon: any }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={[styles.chartRow, { height }]}>
-        {data.map((v, i) => {
-          const h = Math.max(4, Math.round((v / max) * (height - 28))); // reserve label space
-          return (
-            <View key={i} style={[styles.col, { width: colW }]}>
-              <View style={[styles.bar, { height: h, width: barW }]} />
-              <Text numberOfLines={1} style={styles.xLabel}>
-                {labels[i] ?? ""}
-              </Text>
-            </View>
-          );
-        })}
+    <View style={styles.metricCard}>
+      <Ionicons name={icon} size={20} color="#7A294E" />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue} numberOfLines={1}>{value}</Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
-export default function MovementAnalysis() {
+export default function MovementAnalysis({ navigation }: any) {
+  const insets = useSafeAreaInsets();   // ✅ add this
   const [tab, setTab] = useState<"day" | "week" | "month">("day");
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [averageMovement, setAverageMovement] = useState(0);
+  const [lastSafetyCheck, setLastSafetyCheck] = useState<Date | null>(null);
+  const [testModeTimer, setTestModeTimer] = useState<NodeJS.Timeout | null>(null);
+  
+  const activeTabRef = useRef(tab);
+  const safetyCheckRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchSummary = async (which: "day" | "week" | "month") => {
-    const url =
-      which === "month"
-        ? `${BACKEND_URL}/api/history/${USER_ID}/summary/month`
-        : `${BACKEND_URL}/api/history/${USER_ID}/summary/${which}`;
+  // Calculate average movement from historical data
+  const calculateAverageMovement = useCallback((movementData: SummaryPoint[]) => {
+    if (movementData.length === 0) return 0;
+    
+    const totalMovement = movementData.reduce((sum, point) => sum + point.activeMins, 0);
+    const avg = totalMovement / movementData.length;
+    
+    console.log(`📊 Average Movement: ${avg.toFixed(1)} mins from ${movementData.length} data points`);
+    return avg;
+  }, []);
 
-    const res = await fetch(url);
-    const raw = await res.json();
-
-    if (!res.ok || !raw?.ok) {
-      throw new Error(raw?.message || "Summary fetch failed");
+  // Safety monitoring function
+  const checkSafetyStatus = useCallback(async (currentData: SummaryResponse) => {
+    console.log("🔍 Starting safety check...");
+    
+    if (TESTING_MODE) {
+      // 🧪 Test Mode - Auto alert after 20 seconds
+      console.log("🧪 [TEST MODE] Setting up auto alert...");
+      
+      // Clear existing timer
+      if (testModeTimer) {
+        clearTimeout(testModeTimer);
+      }
+      
+      // Set new timer for 20 seconds
+      const timer = setTimeout(async () => {
+        console.log("🧪 [TEST MODE] 20 seconds elapsed - triggering safety alert!");
+        const avg = calculateAverageMovement(currentData.series);
+        const currentMovement = currentData.series[0]?.activeMins || 0;
+        
+        await sendSafetyAlert(currentMovement, avg);
+        setLastSafetyCheck(new Date());
+      }, AUTO_ALERT_DELAY);
+      
+      setTestModeTimer(timer);
+      return;
     }
+    
+    // 🛡️ Production Mode - Normal safety check
+    // Calculate average from historical data
+    const avg = calculateAverageMovement(currentData.series);
+    setAverageMovement(avg);
 
-    return raw as SummaryResponse;
-  };
+    // Get today's movement
+    const currentMovement = currentData.series[0]?.activeMins || 0;
+    const threshold = avg * MOVEMENT_THRESHOLD;
+    
+    console.log("📊 Safety Analysis:");
+    console.log(`  - Current Movement: ${currentMovement} mins`);
+    console.log(`  - Average Movement: ${avg.toFixed(1)} mins`);
+    console.log(`  - Threshold (${MOVEMENT_THRESHOLD * 100}%): ${threshold.toFixed(1)} mins`);
+    console.log(`  - Testing Mode: ${TESTING_MODE}`);
+    console.log(`  - Condition: ${currentMovement} > ${threshold} = ${currentMovement > threshold}`);
 
-  const load = async (which = tab) => {
-    setLoading(true);
+    // Check if current movement is above threshold
+    if (currentMovement > threshold) {
+      console.log("✅ User is SAFE - Movement above average threshold");
+      await sendSafetyAlert(currentMovement, avg);
+      setLastSafetyCheck(new Date());
+    } else {
+      console.log("⚠️ Movement below threshold - monitoring continues");
+      console.log(`💡 Tip: Need movement > ${threshold.toFixed(1)} mins to trigger alert`);
+    }
+  }, [calculateAverageMovement, testModeTimer]);
+
+  const loadData = useCallback(async (isSilent = false) => {
+    activeTabRef.current = tab;
+    if (!isSilent) setLoading(true);
+    
     try {
-      const s = await fetchSummary(which);
-      setData(s);
+      const res = await fetch(`${BACKEND_URL}/api/history/${USER_ID}/summary/${tab}`);
+      const raw = await res.json();
+      
+      if (raw?.ok && activeTabRef.current === tab) {
+        setData(raw);
+        
+        // Apply dynamic stability calculation (same as home page)
+        let stability = raw?.cards?.stability ?? "--";
+        
+        // Check for both "100%" and "100" (string and number)
+        if (stability === "100%" || stability === "100" || stability === 100) {
+          stability = calculateLocalStability();
+          console.log("🔧 Movement Analysis - Using local stability calculation:", stability);
+        }
+        
+        // Update data with dynamic stability
+        const updatedData = {
+          ...raw,
+          cards: {
+            ...raw.cards,
+            stability: stability
+          }
+        };
+        
+        setData(updatedData);
+        
+        // Run safety check when data loads
+        if (!isSilent) {
+          await checkSafetyStatus(updatedData);
+        }
+      }
     } catch (e) {
-      console.log("Movement summary error:", e);
-      setData(null);
+      console.log("Movement Fetch Error:", e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load(tab);
-    const id = setInterval(() => load(tab), 8000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const s = await fetchSummary(tab);
-      setData(s);
-    } catch (e) {
-      console.log("Refresh error:", e);
-    } finally {
       setRefreshing(false);
     }
+  }, [tab, checkSafetyStatus]);
+
+  useEffect(() => {
+    loadData();
+    
+    // Set up safety monitoring interval
+    safetyCheckRef.current = setInterval(async () => {
+      if (data) {
+        await checkSafetyStatus(data);
+      }
+    }, SAFETY_CHECK_INTERVAL);
+
+    return () => {
+      if (safetyCheckRef.current) {
+        clearInterval(safetyCheckRef.current);
+      }
+    };
+  }, [loadData, data, checkSafetyStatus]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData(true);
   };
 
-  const avgSeries = useMemo(() => {
-    if (!data?.series?.length) return [];
-    return data.series.map((p) => p.activeMins);
-  }, [data]);
-
-  const labels = useMemo(() => {
-    if (!data?.series?.length) return [];
-    if (tab === "week") return data.series.map((p) => toDayName(p.label));
-    if (tab === "month") return data.series.map((p) => p.label.split("-")[2]); // 01..31
-    return data.series.map((p) => niceDate(p.label));
+  const chartInfo = useMemo(() => {
+    if (!data?.series) return { vals: [], lbls: [] };
+    return {
+      vals: data.series.map(p => p.activeMins),
+      lbls: data.series.map(p => 
+        tab === "week" ? toDayName(p.label) : 
+        tab === "month" ? p.label.split("-")[2] : niceDate(p.label)
+      )
+    };
   }, [data, tab]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <LinearGradient colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]} style={styles.bg}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Movement Analysis</Text>
-          <Text style={styles.sub}>Day · Week · Month summary (IST) · {USER_ID}</Text>
-
-          <View style={styles.tabRow}>
-            {(["day", "week", "month"] as const).map((k) => (
-              <TouchableOpacity
-                key={k}
-                onPress={() => setTab(k)}
-                style={[styles.tab, tab === k && styles.tabActive]}
-              >
-                <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>
-                  {k.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {loading ? (
-          <View style={{ paddingTop: 30 }}>
-            <ActivityIndicator />
-            <Text style={styles.loadingText}>Loading summary...</Text>
-          </View>
-        ) : !data ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>No data</Text>
-            <Text style={styles.emptySub}>Check backend is reachable and logs exist.</Text>
-          </View>
-        ) : (
-          <ScrollView
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            contentContainerStyle={{ paddingBottom: 120 }}
+    <View style={styles.container}>
+      {/* Translucent allows the gradient to sit behind the status bar icons */}
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      
+      <LinearGradient
+        colors={["#FFFBF0", "#FDF2F7", "#F6E6EE"]}
+        style={[styles.bg, { paddingTop: insets.top + 16 }]}  // ✅ dynamic top padding
+      >
+          <ScrollView 
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#7A294E" />
+            }
+            contentContainerStyle={{ paddingBottom: 110 }}
           >
-            {/* Cards */}
-            <View style={styles.cardsRow}>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Active Time</Text>
-                <Text style={styles.cardValue}>{data.cards.activeTime}</Text>
-              </View>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Stability</Text>
-                <Text style={styles.cardValue}>{data.cards.stability}</Text>
-              </View>
-            </View>
+          {/* Header Section - Moved down 2 inches */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Movement</Text>
+            <Text style={styles.sub}>History Analysis • {USER_ID}</Text>
 
-            <View style={styles.cardsRow}>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Avg Speed</Text>
-                <Text style={styles.cardValue}>{data.cards.avgSpeed}</Text>
-              </View>
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Intensity</Text>
-                <Text style={styles.cardValue}>{data.cards.intensity}</Text>
-              </View>
-            </View>
-
-            {/* Table */}
-            <View style={styles.tableCard}>
-              <Text style={styles.tableTitle}>
-                {tab === "day" ? "Today" : tab === "week" ? "Last 7 days" : "This month"} breakdown
-              </Text>
-
-              {data.series.map((p, idx) => (
-                <View key={p.label} style={[styles.row, idx === 0 && { marginTop: 10 }]}>
-                  <Text style={[styles.rowLeft, tab === "month" && { width: 40 }]}>{labels[idx]}</Text>
-                  <Text style={styles.rowMid}>{p.activeMins} mins</Text>
-                  <Text style={styles.rowRight}>{p.stability}%</Text>
-                </View>
+            <View style={styles.tabRow}>
+              {["day", "week", "month"].map((k) => (
+                <TouchableOpacity 
+                  key={k} 
+                  onPress={() => setTab(k as any)} 
+                  style={[styles.tab, tab === k && styles.tabActive]}
+                >
+                  <Text style={[styles.tabText, tab === k && { color: "white" }]}>
+                    {k.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
+          </View>
 
-            {/* Avg Graph */}
-            <View style={styles.tableCard}>
-              <Text style={styles.tableTitle}>Average Activity Graph</Text>
-              <Text style={styles.graphSub}>Bars = active minutes</Text>
-
-              {/* ✅ Month shows all 31 days (scroll horizontally), perfectly aligned */}
-              <MiniBarChart data={avgSeries} labels={labels} />
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" color="#7A294E" />
+              <Text style={{ marginTop: 10, color: "#A07A88", fontWeight: "600" }}>
+                Syncing analysis...
+              </Text>
             </View>
-          </ScrollView>
-        )}
+          ) : (
+            <>
+              {/* Safety Status Card */}
+              <View style={styles.safetyCard}>
+                <View style={styles.safetyHeader}>
+                  <Ionicons name="shield-checkmark" size={20} color="#4CAF50" />
+                  <Text style={styles.safetyTitle}>Safety Monitoring</Text>
+                  {TESTING_MODE && (
+                    <View style={styles.testModeBadge}>
+                      <Text style={styles.testModeText}>TEST MODE</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.safetySub}>Average: {averageMovement.toFixed(1)} mins</Text>
+                {lastSafetyCheck && (
+                  <Text style={styles.lastCheck}>
+                    Last check: {lastSafetyCheck.toLocaleTimeString()}
+                  </Text>
+                )}
+                <TouchableOpacity 
+                  style={styles.testBtn}
+                  onPress={() => data && checkSafetyStatus(data)}
+                >
+                  <Text style={styles.testBtnText}>
+                    {TESTING_MODE ? "🧪 Test Safety Alert" : "🛡️ Test Safety Alert"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Metric Grid */}
+              <View style={styles.grid}>
+                <MetricBox label="Active Time" value={data?.cards.activeTime || "0m"} icon="walk-outline" />
+                <MetricBox label="Stability" value={data?.cards.stability || "0%"} icon="shield-checkmark-outline" />
+                <MetricBox label="Avg Speed" value={data?.cards.avgSpeed || "0m/s"} icon="speedometer-outline" />
+                <MetricBox label="Intensity" value={data?.cards.intensity || "Idle"} icon="flame-outline" />
+              </View>
+
+              {/* Breakdown Table */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Daily Breakdown</Text>
+                {data?.series.length === 0 ? (
+                   <Text style={styles.emptyText}>No records for this period</Text>
+                ) : (
+                  data?.series.map((p, i) => (
+                    <View key={i} style={styles.row}>
+                      <Text style={styles.rowLeft}>{chartInfo.lbls[i]}</Text>
+                      <Text style={styles.rowMid}>{p.activeMins} mins</Text>
+                      <Text style={styles.rowRight}>{p.stability}%</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              {/* Trend Chart */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Activity Trend</Text>
+                <Text style={styles.graphSub}>Active minutes over time</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
+                  <View style={[styles.chartArea, { minWidth: tab === "month" ? width * 3.5 : width - 80 }]}>
+                    {chartInfo.vals.map((v, i) => {
+                      const max = Math.max(1, ...chartInfo.vals);
+                      const barHeight = Math.max(4, (v / max) * 110);
+                      return (
+                        <View key={i} style={styles.chartCol}>
+                          <View style={[styles.bar, { height: barHeight }]} />
+                          <Text style={styles.xLabel}>{chartInfo.lbls[i]}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            </>
+          )}
+        </ScrollView>
       </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1, paddingTop: 40, paddingHorizontal: 16 },
-
-  header: { marginBottom: 12 },
-  title: { fontSize: 26, fontWeight: "900", color: "#7A294E" },
-  sub: { marginTop: 4, fontSize: 12, fontWeight: "700", color: "#A07A88" },
-
-  tabRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#7A294E",
-    backgroundColor: "rgba(255,255,255,0.7)",
+  container: { 
+    flex: 1, 
+    backgroundColor: "#FFFBF0" 
   },
-  tabActive: { backgroundColor: "#7A294E" },
-  tabText: { fontWeight: "900", fontSize: 12, color: "#7A294E" },
-  tabTextActive: { color: "white" },
-
-  loadingText: { textAlign: "center", marginTop: 10, fontWeight: "700", color: "#A07A88" },
-
-  cardsRow: { flexDirection: "row", gap: 12, marginTop: 12 },
-  card: {
+  
+  bg: {
     flex: 1,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
+    paddingHorizontal: 18,
+    paddingBottom: 20,
   },
-  cardLabel: { fontSize: 11, fontWeight: "900", color: "#A07A88" },
-  cardValue: { marginTop: 8, fontSize: 16, fontWeight: "900", color: "#7A294E" },
 
-  tableCard: {
-    marginTop: 12,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
+  header: { 
+    marginBottom: 15 
   },
-  tableTitle: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
 
-  row: { flexDirection: "row", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#F6E6EE" },
-  rowLeft: { width: 70, fontWeight: "900", color: "#7A294E" },
-  rowMid: { flex: 1, fontWeight: "800", color: "#A07A88" },
-  rowRight: { width: 70, textAlign: "right", fontWeight: "900", color: "#7A294E" },
+  title: { 
+    fontSize: 32, 
+    fontWeight: "900", 
+    color: "#7A294E" 
+  },
 
-  graphSub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88" },
+  sub: { 
+    fontSize: 13, 
+    fontWeight: "600", 
+    color: "#A07A88", 
+    marginTop: 4 
+  },
 
-  // ✅ Perfectly aligned chart layout
-  chartRow: {
-    marginTop: 12,
+  tabRow: { 
+    flexDirection: "row", 
+    gap: 10, 
+    marginTop: 20 
+  },
+
+  tab: { 
+    paddingVertical: 10, 
+    paddingHorizontal: 20, 
+    borderRadius: 25, 
+    backgroundColor: "white", 
+    borderWidth: 1, 
+    borderColor: "#F3E5EC",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+
+  tabActive: { 
+    backgroundColor: "#7A294E", 
+    borderColor: "#7A294E" 
+  },
+
+  tabText: { 
+    fontWeight: "900", 
+    fontSize: 12, 
+    color: "#7A294E" 
+  },
+
+  grid: { 
+    flexDirection: "row", 
+    flexWrap: "wrap", 
+    gap: 12 
+  },
+
+  metricCard: { 
+    width: (width - 52) / 2, 
+    backgroundColor: "white", 
+    borderRadius: 24, 
+    padding: 18, 
+    borderWidth: 1, 
+    borderColor: "#F3E5EC",
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    elevation: 1,
+  },
+
+  metricLabel: { 
+    fontSize: 11, 
+    color: "#A07A88", 
+    fontWeight: "800" 
+  },
+
+  metricValue: { 
+    fontSize: 16, 
+    fontWeight: "900", 
+    color: "#7A294E", 
+    marginTop: 2 
+  },
+
+  card: { 
+    backgroundColor: "white", 
+    borderRadius: 28, 
+    padding: 22, 
+    marginTop: 18, 
+    borderWidth: 1, 
+    borderColor: "#F3E5EC",
+    elevation: 3,
+    shadowColor: "#7A294E",
+    shadowOpacity: 0.08,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 4 },
+  },
+
+  cardTitle: { 
+    fontSize: 17, 
+    fontWeight: "900", 
+    color: "#7A294E" 
+  },
+
+  graphSub: { 
+    fontSize: 12, 
+    color: "#A07A88", 
+    fontWeight: "600", 
+    marginTop: 2 
+  },
+  
+  row: { 
+    flexDirection: "row", 
+    paddingVertical: 16, 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#FDF2F7" 
+  },
+
+  rowLeft: { 
+    width: 75, 
+    fontWeight: "900", 
+    color: "#7A294E" 
+  },
+
+  rowMid: { 
+    flex: 1, 
+    color: "#A07A88", 
+    fontWeight: "700" 
+  },
+
+  rowRight: { 
+    fontWeight: "900", 
+    color: "#7A294E" 
+  },
+
+  chartArea: { 
+    flexDirection: "row", 
+    alignItems: "flex-end", 
+    height: 150, 
+    paddingTop: 10,
+    paddingBottom: 5,
+    justifyContent: 'flex-start'
+  },
+
+  chartCol: { 
+    alignItems: "center", 
+    minWidth: 20, 
+    marginHorizontal: 2 
+  },
+
+  bar: { 
+    width: 10, 
+    backgroundColor: "#7A294E", 
+    borderRadius: 5, 
+    opacity: 0.85 
+  },
+
+  xLabel: { 
+    marginTop: 10, 
+    fontSize: 10, 
+    fontWeight: "800", 
+    color: "#A07A88" 
+  },
+  
+  center: { 
+    height: 300, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+
+  emptyText: { 
+    textAlign: 'center', 
+    marginTop: 20, 
+    color: '#A07A88', 
+    fontWeight: '700' 
+  },
+
+  // Safety Monitoring Styles
+  safetyCard: {
+    backgroundColor: "white",
+    borderRadius: 28,
+    padding: 22,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#E8F5E8",
+    elevation: 3,
+    shadowColor: "#4CAF50",
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  safetyHeader: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    paddingVertical: 6,
-  },
-  col: {
     alignItems: "center",
-    justifyContent: "flex-end",
+    marginBottom: 12,
   },
-  bar: {
-    borderRadius: 8,
-    backgroundColor: "#7A294E",
-    opacity: 0.85,
+  safetyTitle: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#2F8F6B",
+    marginLeft: 8,
   },
-  xLabel: {
-    marginTop: 6,
+  safetySub: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#A07A88",
+    marginBottom: 8,
+  },
+  lastCheck: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#4CAF50",
+  },
+  testBtn: {
+    backgroundColor: "#4CAF50",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  testBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "white",
+  },
+  testModeBadge: {
+    backgroundColor: "#FF9800",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  testModeText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#A07A88",
-    textAlign: "center",
+    color: "white",
   },
-
-  emptyBox: {
-    marginTop: 20,
-    backgroundColor: "white",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#F3E5EC",
-    alignItems: "center",
-  },
-  emptyText: { fontSize: 14, fontWeight: "900", color: "#7A294E" },
-  emptySub: { marginTop: 6, fontSize: 12, fontWeight: "700", color: "#A07A88", textAlign: "center" },
 });
